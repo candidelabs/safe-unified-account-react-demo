@@ -43,7 +43,7 @@ async function signAndSendMultiChainUserOps(
 
   // Debug: log per-chain UserOp data before signing
   console.log('[multichain] chains:', ops.map(op => op.chainId.toString()));
-  ops.forEach((op, i) => {
+  ops.forEach((op) => {
     const uo = op.userOp;
     console.log(`[multichain] chain ${op.chainId} userOp:`, {
       sender: uo.sender,
