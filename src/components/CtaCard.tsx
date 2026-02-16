@@ -14,7 +14,7 @@ function CtaCard() {
 					Read the docs →
 				</a>
 				<a
-					href="https://github.com/candidelabs/safe-unified-account-passkeys-react-example"
+					href="https://github.com/candidelabs/safe-unified-account-react-demo"
 					target="_blank"
 				>
 					View source →
