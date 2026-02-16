@@ -602,6 +602,7 @@
   border-radius: var(--radius-lg);
   padding: 1.5rem;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   position: relative;
 }
 
@@ -624,8 +625,25 @@
   font-size: 0.8rem;
   line-height: 1.7;
   color: var(--text-primary);
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-all;
   opacity: 0.85;
+}
+
+@media screen and (max-width: 768px) {
+  .code-block {
+    padding: 1rem;
+    border-radius: var(--radius-md);
+  }
+
+  .code-block pre {
+    font-size: 0.7rem;
+    line-height: 1.6;
+  }
+
+  .code-block::before {
+    display: none;
+  }
 }
 
 .code-block .code-comment {
@@ -825,6 +843,11 @@
 
   .cta-card {
     padding: 2rem 1.25rem;
+  }
+
+  .code-showcase-toggle {
+    padding: 0.85rem 1rem;
+    font-size: 0.88rem;
   }
 
   .faq-section {
