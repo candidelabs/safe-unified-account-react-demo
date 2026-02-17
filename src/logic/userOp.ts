@@ -76,13 +76,33 @@ async function signAndSendMultiChainUserOps(
   // 3. Extract additional clientDataJSON fields (post-challenge)
   console.log('[multichain] clientDataJSON:', metadata.clientDataJSON);
 
-  const clientDataMatch = metadata.clientDataJSON.match(
-    /^\{"type":"webauthn.get","challenge":"[A-Za-z0-9\-_]{43}",(.*)\}$/,
-  );
-  if (!clientDataMatch) {
-    throw new Error('Invalid clientDataJSON format: challenge not found');
+  // Parse clientDataJSON and extract fields beyond type and challenge
+  // This is more robust than regex as it handles different field orders and formatting
+  let fields: string;
+  try {
+    const clientData = JSON.parse(metadata.clientDataJSON);
+    console.log('[multichain] parsed clientData:', clientData);
+
+    // Verify required fields exist
+    if (!clientData.type || !clientData.challenge) {
+      throw new Error('Missing required fields in clientDataJSON');
+    }
+
+    // Create a copy without type and challenge to get additional fields
+    const { type, challenge, ...remainingFields } = clientData;
+    console.log('[multichain] remainingFields:', remainingFields);
+
+    // Reconstruct the fields string (everything after challenge in original format)
+    // We need to serialize the remaining fields as JSON key-value pairs without outer braces
+    const fieldsArray = Object.entries(remainingFields).map(
+      ([key, value]) => `"${key}":${JSON.stringify(value)}`
+    );
+    fields = fieldsArray.join(',');
+    console.log('[multichain] extracted fields string:', fields);
+  } catch (err) {
+    console.error('[multichain] Failed to parse clientDataJSON:', err);
+    throw new Error(`Invalid clientDataJSON format: ${err instanceof Error ? err.message : 'parse failed'}`);
   }
-  const [, fields] = clientDataMatch;
 
   // 4. Assemble WebauthnSignatureData
   const webauthnSignatureData: WebauthnSignatureData = {
