@@ -1,5 +1,5 @@
 import safeLogo from "/safe-logo-white.svg";
-import candideLogo from "/candide-atelier-logo.svg";
+import candideLogo from "/candide-wordmark.svg";
 import {
 	PasskeyLocalStorageFormat,
 	createPasskey,
