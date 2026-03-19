@@ -40,7 +40,7 @@ The default setup targets Ethereum Sepolia + Optimism Sepolia + Arbitrum Sepolia
 1. Create a Passkey: WebAuthn P-256 credential using device biometrics (Touch ID, Face ID, security keys, or password managers)
 2. Choose an action: add/remove a signer or guardian, optionally with a custom address
 3. Single passkey authentication: signs a multichain Merkle root hash covering all chains at once
-4. Parallel execution: UserOperations are sent to all chains concurrently, gas sponsored by AllowAllPaymaster, with per-chain status updates as each confirms
+4. Parallel execution: UserOperations are sent to all chains concurrently, gas sponsored by ExperimentalAllowAllParallelPaymaster, with per-chain status updates as each confirms
 
 ## Environment Variables
 

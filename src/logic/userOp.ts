@@ -2,8 +2,8 @@ import { sign } from 'ox/WebAuthnP256';
 import { Hex as OxHex } from 'ox/Hex'
 import { Bytes, Hex } from 'ox'
 import {
-  SafeMultiChainSigAccount as SafeAccount,
-  AllowAllPaymaster,
+  ExperimentalSafeMultiChainSigAccount as SafeAccount,
+  ExperimentalAllowAllParallelPaymaster,
   SignerSignaturePair,
   WebauthnSignatureData,
   SendUseroperationResponse,
@@ -29,7 +29,7 @@ export interface MultiChainUserOpInput {
  * 2. Compute multichain Merkle root hash via getMultiChainSingleSignatureUserOperationsEip712Hash().
  * 3. Sign once with WebAuthn (single biometric prompt).
  * 4. Expand the single signature into per-chain signatures via formatSignaturesToUseroperationsSignatures().
- * 5. Apply AllowAllPaymaster data (must happen after signatures are set).
+ * 5. Apply ExperimentalAllowAllParallelPaymaster data (must happen after signatures are set).
  * 6. Send all UserOperations concurrently.
  */
 async function signAndSendMultiChainUserOps(
@@ -128,7 +128,12 @@ async function signAndSendMultiChainUserOps(
   const signatures = SafeAccount.formatSignaturesToUseroperationsSignatures(
     userOperationsToSign,
     [signerSignaturePair],
-    { isInit },
+    {
+      isInit,
+      safe4337ModuleAddress: SafeAccount.DEFAULT_SAFE_4337_MODULE_ADDRESS,
+      eip7212WebAuthnPrecompileVerifier: SafeAccount.DEFAULT_WEB_AUTHN_PRECOMPILE,
+      eip7212WebAuthnContractVerifier: SafeAccount.DEFAULT_WEB_AUTHN_DAIMO_VERIFIER,
+    },
   );
 
   ops.forEach((op, i) => {
@@ -137,7 +142,7 @@ async function signAndSendMultiChainUserOps(
   });
 
   // 6. Apply paymaster data (can happen during or after signatures are set)
-  const paymaster = new AllowAllPaymaster();
+  const paymaster = new ExperimentalAllowAllParallelPaymaster();
   const paymasterResults = await Promise.all(
     ops.map((op) => paymaster.getApprovedPaymasterData(op.userOp)),
   );

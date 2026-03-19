@@ -84,13 +84,13 @@ Validation in `vite.config.ts` loops through chains and throws if any required v
 
 This is the core flow in `logic/userOp.ts` → `signAndSendMultiChainUserOps()`:
 
-1. **Initialize account** — `SafeMultiChainSigAccount.initializeNewAccount([pubkeyCoordinates])`
+1. **Initialize account** — `ExperimentalSafeMultiChainSigAccount.initializeNewAccount([pubkeyCoordinates])`
 2. **Build MetaTransactions** — e.g. `createAddOwnerWithThresholdMetaTransactions()` or guardian operations
 3. **Create UserOperations per chain** — `safeAccount.createUserOperation(txs, rpc, bundler, { ...paymasterInitFields })` — paymaster init fields are spread into the options
 4. **Compute Merkle root hash** — `SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(userOperationsToSign)`
 5. **Sign once with WebAuthn** — single `ox/WebAuthnP256.sign({ challenge: multiChainHash })` call, one biometric prompt
 6. **Expand to per-chain signatures** — `SafeAccount.formatSignaturesToUseroperationsSignatures(userOperationsToSign, [signerSignaturePair], { isInit })`
-7. **Apply paymaster data AFTER signatures** — `AllowAllPaymaster.getApprovedPaymasterData(userOp)` (order matters: signatures must be set first)
+7. **Apply paymaster data AFTER signatures** — `ExperimentalAllowAllParallelPaymaster.getApprovedPaymasterData(userOp)` (order matters: signatures must be set first)
 8. **Send concurrently** — `Promise.all()` submitting all chains in parallel, then wait for inclusion
 
 ### Signer Management (SafeCard.tsx — Signers tab)
@@ -139,7 +139,7 @@ safeAccount.isModuleEnabled(rpc, socialRecoveryModule.moduleAddress)
 ### Paymaster
 
 ```typescript
-const paymaster = new AllowAllPaymaster();
+const paymaster = new ExperimentalAllowAllParallelPaymaster();
 
 // Step 1: Get init fields (spread into createUserOperation options)
 const initFields = paymaster.getPaymasterFieldsInitValues(chainId);
