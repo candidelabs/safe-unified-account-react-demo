@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import {
-	SafeMultiChainSigAccount as SafeAccount,
-	AllowAllPaymaster,
+	ExperimentalSafeMultiChainSigAccount as SafeAccount,
+	ExperimentalAllowAllParallelPaymaster,
 	MetaTransaction,
 	SocialRecoveryModule,
 	SocialRecoveryModuleGracePeriodSelector
@@ -113,7 +113,7 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
 		const allTransactions = await buildTxs(safeAccount);
 
-		const paymaster = new AllowAllPaymaster();
+		const paymaster = new ExperimentalAllowAllParallelPaymaster();
 		const paymasterFields = await Promise.all(
 			chains.map((chain) => paymaster.getPaymasterFieldsInitValues(chain.chainId)),
 		);
