@@ -125,11 +125,9 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 					chain.jsonRpcProvider,
 					chain.bundlerUrl,
 					{
-						...paymasterFields[i],
+						parallelPaymasterInitValues: paymasterFields[i],
 						expectedSigners: [passkey.pubkeyCoordinates],
-						isMultiChainSignature: true,
-						preVerificationGasPercentageMultiplier: 150,
-						verificationGasLimitPercentageMultiplier: 150,
+						preVerificationGasPercentageMultiplier: 120,
 					},
 				),
 			),

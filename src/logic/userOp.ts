@@ -128,7 +128,12 @@ async function signAndSendMultiChainUserOps(
   const signatures = SafeAccount.formatSignaturesToUseroperationsSignatures(
     userOperationsToSign,
     [signerSignaturePair],
-    { isInit },
+    {
+      isInit,
+      safe4337ModuleAddress: SafeAccount.DEFAULT_SAFE_4337_MODULE_ADDRESS,
+      eip7212WebAuthnPrecompileVerifier: SafeAccount.DEFAULT_WEB_AUTHN_PRECOMPILE,
+      eip7212WebAuthnContractVerifier: SafeAccount.DEFAULT_WEB_AUTHN_DAIMO_VERIFIER,
+    },
   );
 
   ops.forEach((op, i) => {
