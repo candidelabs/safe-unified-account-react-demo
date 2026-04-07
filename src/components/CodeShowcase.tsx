@@ -19,7 +19,7 @@ function CodeShowcase() {
 					<pre>
 						<span className="code-comment">{"// 1. Initialize account with passkey\n"}</span>
 						<span className="code-keyword">{"const "}</span>
-						{"account = ExperimentalSafeMultiChainSigAccount."}
+						{"account = SafeMultiChainSigAccountV1."}
 						<span className="code-fn">{"initializeNewAccount"}</span>
 						{"([pubkey]);\n\n"}
 						<span className="code-comment">{"// 2. Create user operations for each chain\n"}</span>
@@ -35,7 +35,7 @@ function CodeShowcase() {
 						{"(txs, chain))\n);\n\n"}
 						<span className="code-comment">{"// 3. Compute multichain hash (Merkle root)\n"}</span>
 						<span className="code-keyword">{"const "}</span>
-						{"hash = ExperimentalSafeMultiChainSigAccount\n  ."}
+						{"hash = SafeMultiChainSigAccountV1\n  ."}
 						<span className="code-fn">{"getMultiChainSingleSignatureUserOperationsEip712Hash"}</span>
 						{"(ops);\n\n"}
 						<span className="code-comment">{"// 4. Sign once with passkey — single biometric prompt\n"}</span>
@@ -47,7 +47,7 @@ function CodeShowcase() {
 						{"({ challenge: hash });\n\n"}
 						<span className="code-comment">{"// 5. Expand to per-chain signatures and send\n"}</span>
 						<span className="code-keyword">{"const "}</span>
-						{"sigs = ExperimentalSafeMultiChainSigAccount\n  ."}
+						{"sigs = SafeMultiChainSigAccountV1\n  ."}
 						<span className="code-fn">{"formatSignaturesToUseroperationsSignatures"}</span>
 						{"(ops, [signature]);\n"}
 						<span className="code-keyword">{"await "}</span>

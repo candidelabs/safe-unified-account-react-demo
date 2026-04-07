@@ -2,8 +2,8 @@ import { sign } from 'ox/WebAuthnP256';
 import { Hex as OxHex } from 'ox/Hex'
 import { Bytes, Hex } from 'ox'
 import {
-  ExperimentalSafeMultiChainSigAccount as SafeAccount,
-  ExperimentalAllowAllParallelPaymaster,
+  SafeMultiChainSigAccountV1 as SafeAccount,
+  CandidePaymaster,
   SignerSignaturePair,
   WebauthnSignatureData,
   SendUseroperationResponse,
@@ -18,29 +18,30 @@ export interface MultiChainUserOpInput {
   userOp: UserOperationV9;
   chainId: bigint;
   bundlerUrl: string;
+  paymasterUrl: string;
 }
+
+export type MultiChainSendResult =
+  | { status: 'sent'; response: SendUseroperationResponse }
+  | { status: 'failed'; error: string };
 
 /**
  * Signs N UserOperations on multiple chains with a single passkey authentication
  * and sends them to their respective bundlers.
  *
  * Workflow:
- * 1. Build userOperationsToSign array for all chains.
- * 2. Compute multichain Merkle root hash via getMultiChainSingleSignatureUserOperationsEip712Hash().
+ * 1. Paymaster commit — gas estimation and paymaster fields for all chains.
+ * 2. Compute multichain Merkle root hash.
  * 3. Sign once with WebAuthn (single biometric prompt).
- * 4. Expand the single signature into per-chain signatures via formatSignaturesToUseroperationsSignatures().
- * 5. Apply ExperimentalAllowAllParallelPaymaster data (must happen after signatures are set).
+ * 4. Expand the single signature into per-chain signatures.
+ * 5. Paymaster finalize — seal paymaster data after signatures are set.
  * 6. Send all UserOperations concurrently.
  */
 async function signAndSendMultiChainUserOps(
   ops: MultiChainUserOpInput[],
   passkey: PasskeyLocalStorageFormat,
-): Promise<SendUseroperationResponse[]> {
-  const userOperationsToSign = ops.map((op) => ({
-    userOperation: op.userOp,
-    chainId: op.chainId,
-  }));
-
+  safeAccount: InstanceType<typeof SafeAccount>,
+): Promise<MultiChainSendResult[]> {
   // Debug: log per-chain UserOp data before signing
   console.log('[multichain] chains:', ops.map(op => op.chainId.toString()));
   ops.forEach((op) => {
@@ -60,40 +61,58 @@ async function signAndSendMultiChainUserOps(
     });
   });
 
-  // 1. Multichain Merkle root hash
+  // 1. Paymaster commit — gas estimation + paymaster fields
+  const commitOverrides = {
+    preVerificationGasPercentageMultiplier: 100,
+    context: { signingPhase: "commit" as const },
+  };
+
+  const commitResults = await Promise.all(
+    ops.map((op) => {
+      const paymaster = new CandidePaymaster(op.paymasterUrl);
+      return paymaster.createSponsorPaymasterUserOperation(
+        safeAccount, op.userOp, op.bundlerUrl, undefined, commitOverrides,
+      );
+    }),
+  );
+
+  commitResults.forEach(([committedOp], i) => {
+    ops[i].userOp = committedOp;
+  });
+
+  // 2. Build signing array and compute multichain Merkle root hash
+  const userOperationsToSign = ops.map((op) => ({
+    userOperation: op.userOp,
+    chainId: op.chainId,
+  }));
+
   const multiChainHash = SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(
     userOperationsToSign,
   );
 
   console.log('[multichain] multiChainHash:', multiChainHash);
 
-  // 2. Sign with passkey (single biometric prompt)
+  // 3. Sign with passkey (single biometric prompt)
   const { metadata, signature } = await sign({
     challenge: multiChainHash as OxHex,
     credentialId: passkey.id as OxHex,
   });
 
-  // 3. Extract additional clientDataJSON fields (post-challenge)
+  // 4. Extract additional clientDataJSON fields (post-challenge)
   console.log('[multichain] clientDataJSON:', metadata.clientDataJSON);
 
-  // Parse clientDataJSON and extract fields beyond type and challenge
-  // This is more robust than regex as it handles different field orders and formatting
   let fields: string;
   try {
     const clientData = JSON.parse(metadata.clientDataJSON);
     console.log('[multichain] parsed clientData:', clientData);
 
-    // Verify required fields exist
     if (!clientData.type || !clientData.challenge) {
       throw new Error('Missing required fields in clientDataJSON');
     }
 
-    // Create a copy without type and challenge to get additional fields
     const { type, challenge, ...remainingFields } = clientData;
     console.log('[multichain] remainingFields:', remainingFields);
 
-    // Reconstruct the fields string (everything after challenge in original format)
-    // We need to serialize the remaining fields as JSON key-value pairs without outer braces
     const fieldsArray = Object.entries(remainingFields).map(
       ([key, value]) => `"${key}":${JSON.stringify(value)}`
     );
@@ -104,7 +123,7 @@ async function signAndSendMultiChainUserOps(
     throw new Error(`Invalid clientDataJSON format: ${err instanceof Error ? err.message : 'parse failed'}`);
   }
 
-  // 4. Assemble WebauthnSignatureData
+  // 5. Assemble WebauthnSignatureData
   const webauthnSignatureData: WebauthnSignatureData = {
     authenticatorData: Bytes.fromHex(metadata.authenticatorData)
       .buffer as ArrayBuffer,
@@ -121,7 +140,7 @@ async function signAndSendMultiChainUserOps(
     signature: webauthSignature,
   };
 
-  // 5. Format single signature into per-UserOperation signatures
+  // 6. Format single signature into per-UserOperation signatures
   const isInit = ops[0].userOp.nonce == 0n;
   console.log('[multichain] isInit:', isInit);
 
@@ -131,8 +150,6 @@ async function signAndSendMultiChainUserOps(
     {
       isInit,
       safe4337ModuleAddress: SafeAccount.DEFAULT_SAFE_4337_MODULE_ADDRESS,
-      eip7212WebAuthnPrecompileVerifier: SafeAccount.DEFAULT_WEB_AUTHN_PRECOMPILE,
-      eip7212WebAuthnContractVerifier: SafeAccount.DEFAULT_WEB_AUTHN_DAIMO_VERIFIER,
     },
   );
 
@@ -141,17 +158,25 @@ async function signAndSendMultiChainUserOps(
     console.log(`[multichain] chain ${op.chainId} signature length:`, signatures[i].length);
   });
 
-  // 6. Apply paymaster data (can happen during or after signatures are set)
-  const paymaster = new ExperimentalAllowAllParallelPaymaster();
-  const paymasterResults = await Promise.all(
-    ops.map((op) => paymaster.getApprovedPaymasterData(op.userOp)),
+  // 7. Paymaster finalize — seal paymaster data after signatures
+  const finalizeOverrides = {
+    context: { signingPhase: "finalize" as const },
+  };
+
+  const finalizeResults = await Promise.all(
+    ops.map((op) => {
+      const paymaster = new CandidePaymaster(op.paymasterUrl);
+      return paymaster.createSponsorPaymasterUserOperation(
+        safeAccount, op.userOp, op.bundlerUrl, undefined, finalizeOverrides,
+      );
+    }),
   );
 
-  ops.forEach((op, i) => {
-    op.userOp.paymasterData = paymasterResults[i];
+  finalizeResults.forEach(([finalizedOp], i) => {
+    ops[i].userOp = finalizedOp;
   });
 
-  // 7. Send all UserOperations — use allSettled to see per-chain results
+  // 8. Send all UserOperations — use allSettled so partial failures don't block successes
   const results = await Promise.allSettled(
     ops.map((op) => {
       const sender = new SafeAccount(op.userOp.sender);
@@ -159,31 +184,17 @@ async function signAndSendMultiChainUserOps(
     }),
   );
 
-  // Log per-chain send results
-  const responses: SendUseroperationResponse[] = [];
-  const errors: string[] = [];
-  results.forEach((result, i) => {
+  return results.map((result, i) => {
     if (result.status === 'fulfilled') {
       console.log(`[multichain] chain ${ops[i].chainId} SENT OK:`, result.value.userOperationHash);
-      responses.push(result.value);
+      return { status: 'sent' as const, response: result.value };
     } else {
       const err = result.reason;
-      // Log the full error object to see all properties
-      console.error(`[multichain] chain ${ops[i].chainId} FAILED — full error:`, err);
-      console.error(`[multichain] chain ${ops[i].chainId} error keys:`, err ? Object.keys(err) : 'null');
-      console.error(`[multichain] chain ${ops[i].chainId} JSON:`, JSON.stringify(err, Object.getOwnPropertyNames(err || {})));
+      console.error(`[multichain] chain ${ops[i].chainId} FAILED:`, err);
       const errMsg = err?.message || err?.toString() || 'Unknown error';
-      errors.push(`Chain ${ops[i].chainId}: ${errMsg}`);
+      return { status: 'failed' as const, error: errMsg };
     }
   });
-
-  if (errors.length > 0) {
-    // If some chains succeeded but others failed, log it clearly
-    console.error(`[multichain] ${errors.length}/${ops.length} chains failed:`, errors);
-    throw new Error(errors.join('\n'));
-  }
-
-  return responses;
 }
 
 export { signAndSendMultiChainUserOps }

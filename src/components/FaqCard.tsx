@@ -69,11 +69,11 @@ const faqItems = [
 		question: "What about stablecoin transfers?",
 		answer: (
 			<p>
-				Multichain token transfers, including a unified stablecoin balance
-				across all chains, are coming with the Ethereum Interoperability Layer
-				(EIL). Once live, your users will see and spend from a single
-				aggregated balance without manual bridging. Unified Account is
-				designed for this from day one.
+				Multichain stablecoin transfers work today using native bridges.
+				USDC moves cross-chain via Circle's CCTP bridge, and USDT via
+				LayerZero's USDT0 native bridge. With Unified Account, your user
+				can sign a single transaction that initiates bridge transfers
+				across multiple chains simultaneously.
 			</p>
 		),
 	},
@@ -81,8 +81,14 @@ const faqItems = [
 		question: "Is this production ready?",
 		answer: (
 			<p>
-				We are actively seeking feedback from integration partners before
-				finalizing the audit. The SDK and protocol are functional on testnets
+				The contracts have been audited by{" "}
+				<a
+					href="https://github.com/candidelabs/safe-4337-multi-chain-signature-module/"
+					target="_blank"
+				>
+					Nethermind
+				</a>
+				. The SDK and protocol are functional on testnets and mainnets
 				today. If you're exploring this for production, we'd love to hear your
 				requirements.{" "}
 				<a href="https://cal.com/candidelabs/30mins" target="_blank">
