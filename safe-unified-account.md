@@ -19,9 +19,9 @@ When writing code, follow this order strictly:
 
 ### When sources disagree
 
-- **Docs** win for: SDK version, supported chains, endpoint URLs, paymaster policy
-- **Examples** win for: exact SDK call shapes, method parameters, return types, import paths
-- **Demo repo** wins for: UI patterns, state management, per-chain status tracking, retry logic
+- **Examples** win for: exact SDK call shapes, method parameters, return types, import paths — these are the most up-to-date code
+- **Docs** win for: SDK version, supported chains, endpoint URLs, paymaster policy, SDK reference
+- **Demo repo** is a reference only — useful for seeing patterns (failure handling, retry logic, UI state) but may lag behind the SDK. Do not copy from the demo if it contradicts the examples or docs.
 
 ## Execution Rules
 
