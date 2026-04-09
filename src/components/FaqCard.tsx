@@ -85,13 +85,14 @@ const faqItems = [
 				<a
 					href="https://github.com/candidelabs/safe-4337-multi-chain-signature-module/"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					Nethermind
 				</a>
 				. The SDK and protocol are functional on testnets and mainnets
 				today. If you're exploring this for production, we'd love to hear your
 				requirements.{" "}
-				<a href="https://cal.com/candidelabs/30mins" target="_blank">
+				<a href="https://cal.com/candidelabs/30mins" target="_blank" rel="noopener noreferrer">
 					Schedule a call
 				</a>{" "}.
 			</p>

@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
   if (chainCount < 2) {
     throw new Error(
       `At least 2 chains must be configured. Found ${chainCount}. ` +
-      'Set VITE_CHAIN1_ID, VITE_CHAIN1_BUNDLER_URL, VITE_CHAIN1_JSON_RPC_PROVIDER (and same for CHAIN2+).'
+      'Set VITE_CHAIN1_ID, VITE_CHAIN1_BUNDLER_URL, VITE_CHAIN1_JSON_RPC_PROVIDER, VITE_CHAIN1_PAYMASTER_URL (and same for CHAIN2+).'
     )
   }
 

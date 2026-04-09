@@ -103,7 +103,7 @@ async function signAndSendMultiChainUserOps(
   };
 
   // 6. Format single signature into per-UserOperation signatures
-  const isInit = ops[0].userOp.nonce == 0n;
+  const isInit = ops[0].userOp.nonce === 0n;
 
   const signatures = SafeAccount.formatSignaturesToUseroperationsSignatures(
     userOperationsToSign,
