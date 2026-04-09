@@ -9,7 +9,8 @@ import "./App.css";
 import { useLocalStorageState } from "./hooks/useLocalStorageState.ts";
 import { useState } from "react";
 import { PasskeyCard } from "./components/PasskeyCard.tsx";
-import { SafeCard } from "./components/SafeCard.tsx";
+import { TransferCard } from "./components/TransferCard.tsx";
+import { AccountCard } from "./components/AccountCard.tsx";
 import { CodeShowcase } from "./components/CodeShowcase.tsx";
 import { CtaCard } from "./components/CtaCard.tsx";
 import { FaqCard } from "./components/FaqCard.tsx";
@@ -51,10 +52,9 @@ function App() {
 				<span className="demo-badge">Live Demo</span>
 				<h1>Safe Unified Account</h1>
 				<p className="subtitle">
-					Give your users a single smart account across Ethereum, Optimism,
-					Arbitrum, and more.
+					A single USDT0 balance across Arbitrum, Plasma, and more.
 					<br />
-					One passkey. One signature. Execute across every chain.
+					One passkey. One signature. Transfer across every chain.
 				</p>
 			</div>
 
@@ -63,7 +63,8 @@ function App() {
 				handleCreatePasskeyClick={handleCreatePasskeyClick}
 			/>
 
-			{passkey && <SafeCard passkey={passkey} />}
+			{passkey && <TransferCard passkey={passkey} />}
+			{passkey && <AccountCard passkey={passkey} />}
 
 			{error && (
 				<div className="card">
