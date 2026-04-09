@@ -7,6 +7,16 @@ description: Use when integrating Safe Unified Account, multichain smart account
 
 Single smart account across every EVM chain. One signature executes operations on all chains simultaneously. Built on [abstractionkit](https://docs.candide.dev) SDK.
 
+## Source Priority
+
+When writing code, follow this order strictly:
+
+1. **Docs** — https://docs.candide.dev/wallet/guides/chain-abstraction-overview/ — fetch and read for current API patterns, recommended SDK version, and method signatures
+2. **Examples** — https://github.com/candidelabs/abstractionkit-examples — fetch and read `chain-abstraction/add-owner.ts` (ECDSA) or `chain-abstraction/add-owner-passkey.ts` (passkey) for complete runnable implementations
+3. **Demo repo** — https://github.com/candidelabs/safe-unified-account-demo — reference `src/logic/userOp.ts` for the orchestrator pattern and `src/components/SafeCard.tsx` for failure handling and retry logic
+
+**Do NOT invent API calls.** Copy method signatures, parameter types, and return types from the sources above. If a method or parameter is not documented in the docs or visible in the examples, do not use it.
+
 ## Before You Start
 
 Ask the developer these 4 questions before writing any code:
@@ -29,8 +39,41 @@ Ask the developer these 4 questions before writing any code:
 - Fetch the current supported chain list from https://docs.candide.dev/wallet/bundler/rpc-endpoints/ — do not rely on hardcoded lists, as networks are added over time
 
 **Then, before writing code:**
-- Fetch the recommended SDK version from https://docs.candide.dev/wallet/guides/chain-abstraction-overview/ — install whichever version the docs specify (pinned or latest)
-- Read the integration guide and code examples at the references below to get the current API patterns
+- Fetch the recommended SDK version from the docs (Source #1 above) — install whichever version the docs specify (pinned or latest)
+- Read the matching code example (Source #2 above) end-to-end before writing anything
+
+## Required Outputs
+
+You MUST produce these four building blocks. Adapt the file structure to the developer's project (single file or split — your call), but all four must exist:
+
+**1. Chain configuration** — `ChainConfig` object or loader with these fields per chain:
+- `chainId: bigint`
+- `bundlerUrl: string` — Candide endpoint
+- `rpcUrl: string` — standard JSON-RPC provider (NOT Candide — see gotcha below)
+- `paymasterUrl: string` — Candide endpoint
+
+**2. Account initialization** — function that:
+- Takes an owner (ECDSA address or passkey public key coordinates)
+- Returns a `SafeAccount` instance with deterministic address
+- Handles both new accounts (`initializeNewAccount`) and existing accounts (`new SafeAccount(address)`)
+
+**3. Multichain signing orchestrator** — function that:
+- Takes: MetaTransactions (per chain or shared), chain configs, signer credentials
+- Executes the 8-step flow (build txs → create userOps → paymaster commit → sign → paymaster finalize → send)
+- Returns: per-chain results with status tracking (pending/sent/confirmed/failed)
+- Uses `Promise.allSettled()` for sending (NOT `Promise.all()`)
+- Implements retry logic for failed chains
+
+**4. Verification script** — standalone `verify.ts` that:
+- Auto-generates an ECDSA keypair (no browser needed)
+- Initializes a new Safe account
+- Builds a test MetaTransaction (e.g., add a random owner)
+- Runs the full flow on the developer's configured testnet chains
+- Verifies the operation succeeded on all chains (e.g., `getOwners()`)
+- Prints per-chain results
+- Runs with `npx tsx verify.ts`
+
+Base the verification script on the ECDSA example from Source #2.
 
 ## Setup
 
@@ -38,21 +81,21 @@ Install `abstractionkit` as the core dependency. For utility functions (key gene
 
 If passkeys chosen, the passkey skill specifies additional dependencies.
 
-## Chain Configuration
+## Chain Configuration Gotcha
 
-Each chain needs **three separate endpoints**:
+Each chain needs **three separate endpoints** — this is the most common integration mistake:
 
 1. **Bundler URL** — Candide endpoint, for submitting UserOperations
 2. **Paymaster URL** — Candide endpoint, for gas sponsorship or token payment
 3. **JSON-RPC provider URL** — standard RPC (NOT Candide), for reading state, nonces, gas prices
 
-This is a common gotcha: the Candide public endpoint (`https://api.candide.dev/public/v3/{chainId}`) serves as both bundler and paymaster, but the developer also needs a separate standard JSON-RPC provider per chain (e.g., `publicnode.com`, `drpc.org`, Infura, Alchemy).
+The Candide public endpoint (`https://api.candide.dev/public/v3/{chainId}`) serves as both bundler and paymaster, but it is NOT a JSON-RPC provider. The developer needs a separate RPC per chain (e.g., `publicnode.com`, `drpc.org`, Infura, Alchemy).
 
 Fetch the current list of supported chains and public endpoint URLs from https://docs.candide.dev/wallet/bundler/public-endpoints/. For higher rate limits, get dedicated endpoints from [Candide Dashboard](https://dashboard.candide.dev/).
 
 ## Core Multichain Flow
 
-The integration follows an 8-step flow. Fetch the full code patterns from the docs and examples listed in References below. Here is the conceptual flow:
+The orchestrator follows an 8-step flow. Get the exact code from the docs and examples (Sources #1 and #2). Here is the conceptual flow — do not implement from this description alone:
 
 1. **Build MetaTransactions** — the developer's app-specific logic. The flow is operation-agnostic: any `{ to, value, data }` MetaTransaction works (transfers, contract calls, owner management, module operations). The same transaction can go to all chains, or different transactions per chain.
 2. **Create UserOperations per chain** — one `createUserOperation()` call per chain, passing the MetaTransactions, RPC URL, and bundler URL.
@@ -61,15 +104,13 @@ The integration follows an 8-step flow. Fetch the full code patterns from the do
    - **ECDSA**: single `signUserOperations()` call handles the multichain Merkle hash, signing, and per-chain signature formatting in one step.
    - **Passkeys**: delegate to the passkey skill. Provide the `userOpsToSign` array (each entry has `userOperation` + `chainId`). The passkey skill returns the per-chain `signatures[]` array.
 5. **Paymaster finalize** — call the paymaster again with `signingPhase: "finalize"` to seal paymaster data after signatures are set.
-6. **Send concurrently** — submit all UserOperations in parallel using `Promise.allSettled()` (not `Promise.all()`) so one chain's failure doesn't block others. Wait for inclusion with `response.included()`.
-
-The ECDSA multichain example and passkey multichain example in the References section show complete, runnable implementations of this flow.
+6. **Send concurrently** — submit all UserOperations in parallel using `Promise.allSettled()`. Wait for inclusion with `response.included()`.
 
 ## Paymaster Integration
 
 Two paymaster options, both using the same two-phase commit/finalize pattern:
 
-**Gas sponsorship** (`createSponsorPaymasterUserOperation`): App pays gas on behalf of the user. The optional `sponsorshipPolicyId` parameter enables gated sponsorship policies. See the paymaster docs in References.
+**Gas sponsorship** (`createSponsorPaymasterUserOperation`): App pays gas on behalf of the user. The optional `sponsorshipPolicyId` parameter enables gated sponsorship policies.
 
 **ERC-20 token payment** (`createTokenPaymasterUserOperation`): User pays gas in tokens (USDC, USDT, etc). The paymaster automatically prepends a token approval transaction during the commit phase. Same two-phase pattern.
 
@@ -77,11 +118,11 @@ Both require calling the paymaster twice: once before signing (commit) and once 
 
 ## Partial Failure Handling
 
-**There is no cross-chain atomicity.** A UserOp can succeed on chain A and fail on chain B. The application MUST handle this. This is the most important section of this skill — the docs and examples show the happy path, but production apps need failure handling.
+**There is no cross-chain atomicity.** A UserOp can succeed on chain A and fail on chain B. The application MUST handle this. The docs and examples show the happy path — this section covers what they don't.
 
 ### Per-chain status tracking
 
-Every multichain operation must track independent status per chain (pending → sent → confirmed / failed). Always use `Promise.allSettled()` for sending so one chain's failure doesn't block others.
+Every multichain operation must track independent status per chain (pending → sent → confirmed / failed). Always use `Promise.allSettled()` for sending so one chain's failure doesn't block others. Reference `src/components/SafeCard.tsx` in the demo repo (Source #3) for the implementation pattern.
 
 ### Retry failed chains
 
@@ -109,29 +150,9 @@ Before building multichain security operations, verify account state is consiste
 - **ECDSA**: The developer is responsible for securely storing the private key for future signing sessions (env var, encrypted store, hardware module — their choice).
 - **Passkeys**: Credential persistence is handled by the passkey skill.
 
-## Verification
+## Additional References
 
-After integration, produce a standalone test script that runs the full 8-step flow on testnet using ECDSA with an auto-generated key — no browser needed. Use the ECDSA multichain example in References as the template. The script should:
-
-1. Auto-generate an owner keypair
-2. Initialize a new Safe account
-3. Build a test MetaTransaction (e.g., add a random owner)
-4. Run the complete flow on 2-3 testnet chains
-5. Verify the operation succeeded on all chains (e.g., check `getOwners()`)
-6. Print per-chain results
-
-Run with `npx tsx verify.ts`.
-
-## References
-
-**Docs:**
-- [Safe Unified Account — integration guide + recommended SDK version](https://docs.candide.dev/wallet/guides/chain-abstraction-overview/)
-- [AbstractionKit SDK docs](https://docs.candide.dev)
 - [Supported networks](https://docs.candide.dev/wallet/bundler/rpc-endpoints/)
 - [Public endpoints](https://docs.candide.dev/wallet/bundler/public-endpoints/)
 - [Passkeys integration guide](https://docs.candide.dev/wallet/plugins/passkeys/)
 - [Candide Dashboard](https://dashboard.candide.dev/) — dedicated endpoints with higher rate limits
-
-**Code examples:**
-- [abstractionkit-examples](https://github.com/candidelabs/abstractionkit-examples) — runnable scripts including ECDSA multichain (`chain-abstraction/add-owner.ts`) and passkey multichain (`chain-abstraction/add-owner-passkey.ts`)
-- [Safe Unified Account demo](https://github.com/candidelabs/safe-unified-account-demo) — React demo with partial failure handling, retry logic, per-chain status tracking (see `src/logic/userOp.ts` for the flow, `src/components/SafeCard.tsx` for failure handling)
