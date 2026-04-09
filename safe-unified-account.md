@@ -29,7 +29,7 @@ Ask the developer these 4 questions before writing any code:
 - Fetch the current supported chain list from https://docs.candide.dev/wallet/bundler/rpc-endpoints/ — do not rely on hardcoded lists, as networks are added over time
 
 **Then, before writing code:**
-- Fetch the recommended SDK version from https://docs.candide.dev/account-abstraction/research/safe-unified-account/ — install whichever version the docs specify (pinned or latest)
+- Fetch the recommended SDK version from https://docs.candide.dev/wallet/guides/chain-abstraction-overview/ — install whichever version the docs specify (pinned or latest)
 - Read the integration guide and code examples at the references below to get the current API patterns
 
 ## Setup
@@ -125,7 +125,7 @@ Run with `npx tsx verify.ts`.
 ## References
 
 **Docs:**
-- [Safe Unified Account — integration guide + recommended SDK version](https://docs.candide.dev/account-abstraction/research/safe-unified-account/)
+- [Safe Unified Account — integration guide + recommended SDK version](https://docs.candide.dev/wallet/guides/chain-abstraction-overview/)
 - [AbstractionKit SDK docs](https://docs.candide.dev)
 - [Supported networks](https://docs.candide.dev/wallet/bundler/rpc-endpoints/)
 - [Public endpoints](https://docs.candide.dev/wallet/bundler/public-endpoints/)
@@ -133,6 +133,5 @@ Run with `npx tsx verify.ts`.
 - [Candide Dashboard](https://dashboard.candide.dev/) — dedicated endpoints with higher rate limits
 
 **Code examples:**
-- [ECDSA multichain example](https://github.com/candidelabs/abstractionkit-examples/blob/main/chain-abstraction/add-owner.ts) — complete runnable script, ECDSA signing, 2-chain add-owner
-- [Passkey multichain example](https://github.com/candidelabs/abstractionkit-examples/blob/main/chain-abstraction/add-owner-passkey.ts) — complete runnable script, WebAuthn signing, 2-chain add-owner
-- [Demo app source](https://github.com/candidelabs/safe-unified-account-react-demo) — React demo with partial failure handling, retry logic, per-chain status tracking (see `src/logic/userOp.ts` for the flow, `src/components/SafeCard.tsx` for failure handling)
+- [abstractionkit-examples](https://github.com/candidelabs/abstractionkit-examples) — runnable scripts including ECDSA multichain (`chain-abstraction/add-owner.ts`) and passkey multichain (`chain-abstraction/add-owner-passkey.ts`)
+- [Safe Unified Account demo](https://github.com/candidelabs/safe-unified-account-demo) — React demo with partial failure handling, retry logic, per-chain status tracking (see `src/logic/userOp.ts` for the flow, `src/components/SafeCard.tsx` for failure handling)
