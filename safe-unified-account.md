@@ -33,10 +33,12 @@ Ask the developer these 4 questions before writing any code:
 
 ## Setup
 
-Install dependencies:
+Install the core dependency:
 ```bash
-npm install abstractionkit viem
+npm install abstractionkit
 ```
+
+For utility functions (key generation, address derivation), use whichever Ethereum library the developer already has — **viem** or **ethers**. Both work with abstractionkit. If they have neither, ask which they prefer and install it. Do not add viem to a project that already uses ethers, or vice versa.
 
 If passkeys chosen, the passkey skill specifies additional dependencies (`ox`, etc).
 
@@ -332,6 +334,7 @@ const ownersPerChain = await Promise.all(
 After integration, produce a standalone test script. This uses ECDSA with an auto-generated key to verify the full flow on testnet — no browser needed.
 
 ```typescript
+// Using viem — if developer uses ethers, substitute with ethers.Wallet.createRandom()
 import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
 import {
   SafeMultiChainSigAccountV1 as SafeAccount,
@@ -340,6 +343,7 @@ import {
 
 async function verify() {
   // Auto-generate owner for testing
+  // ethers alternative: const wallet = ethers.Wallet.createRandom();
   const privateKey = generatePrivateKey();
   const owner = privateKeyToAccount(privateKey);
 
@@ -352,6 +356,7 @@ async function verify() {
   console.log('Account:', safeAccount.accountAddress);
 
   // Build test transaction: add a random owner
+  // ethers alternative: ethers.Wallet.createRandom().address
   const newOwner = privateKeyToAccount(generatePrivateKey()).address;
   const tx = safeAccount.createStandardAddOwnerWithThresholdMetaTransaction(newOwner, 1);
 
