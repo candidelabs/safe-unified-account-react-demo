@@ -754,26 +754,33 @@
   border-bottom-color: var(--accent);
 }
 
-.cta-prompts {
+.cta-agent-tabs {
   display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
-  text-align: left;
+  gap: 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border-default);
 }
 
-.cta-prompt-block {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+.cta-agent-tab {
+  font-size: 0.8rem;
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
 }
 
-.cta-prompt-label {
-  font-size: 0.75rem;
-  font-weight: 600;
+.cta-agent-tab:hover {
   color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+}
+
+.cta-agent-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
 .cta-prompt-container {
@@ -781,12 +788,15 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.65rem 1rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-top: none;
+  border-radius: 0 0 var(--radius-md) var(--radius-md);
   background: rgba(0, 0, 0, 0.4);
   cursor: pointer;
   transition: border-color 0.15s;
+  text-align: left;
 }
 
 .cta-prompt-container:hover {
