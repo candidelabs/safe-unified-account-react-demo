@@ -10,18 +10,21 @@ function CtaCard() {
 				<a
 					href="https://docs.candide.dev/account-abstraction/research/safe-unified-account/"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					Read the docs →
 				</a>
 				<a
 					href="https://github.com/candidelabs/safe-unified-account-react-demo"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					View source →
 				</a>
 				<a
 					href="https://cal.com/candidelabs/30mins"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					Schedule a call →
 				</a>

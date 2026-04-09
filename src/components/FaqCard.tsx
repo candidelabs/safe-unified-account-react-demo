@@ -37,6 +37,7 @@ const faqItems = [
 				<a
 					href="https://docs.candide.dev/account-abstraction/research/safe-unified-account/"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					AbstractionKit SDK
 				</a>{" "}
@@ -58,6 +59,7 @@ const faqItems = [
 				<a
 					href="https://docs.candide.dev/wallet/bundler/rpc-endpoints/"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					docs
 				</a>{" "}

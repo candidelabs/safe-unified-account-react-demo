@@ -441,6 +441,7 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 					<a
 						className="chain-track-link"
 						target="_blank"
+						rel="noopener noreferrer"
 						href={`${chain.explorerUrl}/tx/${result.txHash}`}
 					>
 						View transaction ↗
