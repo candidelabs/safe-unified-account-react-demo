@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const SKILL_URL = "https://docs.candide.dev/safe-unified-account-agent-skill.md";
 
@@ -20,11 +20,21 @@ const PROMPTS = [
 function CtaCard() {
 	const [activeTab, setActiveTab] = useState(0);
 	const [copied, setCopied] = useState(false);
+	const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
 
-	const handleCopy = () => {
-		navigator.clipboard.writeText(PROMPTS[activeTab].text);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 2000);
+	useEffect(() => {
+		return () => clearTimeout(copyTimeoutRef.current);
+	}, []);
+
+	const handleCopy = async () => {
+		try {
+			await navigator.clipboard?.writeText(PROMPTS[activeTab].text);
+			setCopied(true);
+			clearTimeout(copyTimeoutRef.current);
+			copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+		} catch {
+			// clipboard write failed (e.g. permissions denied)
+		}
 	};
 
 	return (

@@ -23,7 +23,7 @@ function CodeShowcase() {
 						<span className="code-fn">{"initializeNewAccount"}</span>
 						{"([pubkey]);\n\n"}
 						<span className="code-comment">{"// 2. Create user operations for each chain\n"}</span>
-						<span className="code-keyword">{"const "}</span>
+						<span className="code-keyword">{"let "}</span>
 						{"ops = "}
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
@@ -34,6 +34,8 @@ function CodeShowcase() {
 						<span className="code-fn">{"createUserOperation"}</span>
 						{"(txs, chain))\n);\n\n"}
 						<span className="code-comment">{"// 3. Paymaster commit — gas estimation + sponsorship fields\n"}</span>
+						<span className="code-keyword">{"const "}</span>
+						{"committed = "}
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
@@ -45,7 +47,10 @@ function CodeShowcase() {
 						<span className="code-keyword">{"undefined"}</span>
 						{",\n    { context: { signingPhase: "}
 						<span className="code-string">{"\"commit\""}</span>
-						{" } }\n  )\n));\n\n"}
+						{" } }\n  )\n));\n"}
+						{"committed."}
+						<span className="code-fn">{"forEach"}</span>
+						{"(([op], i) => { ops[i] = op; });\n\n"}
 						<span className="code-comment">{"// 4. Compute multichain hash (Merkle root)\n"}</span>
 						<span className="code-keyword">{"const "}</span>
 						{"hash = SafeMultiChainSigAccountV1\n  ."}
@@ -62,8 +67,13 @@ function CodeShowcase() {
 						<span className="code-keyword">{"const "}</span>
 						{"sigs = SafeMultiChainSigAccountV1\n  ."}
 						<span className="code-fn">{"formatSignaturesToUseroperationsSignatures"}</span>
-						{"(ops, [signature]);\n\n"}
+						{"(ops, [signature]);\n"}
+						{"ops."}
+						<span className="code-fn">{"forEach"}</span>
+						{"((op, i) => { op.signature = sigs[i]; });\n\n"}
 						<span className="code-comment">{"// 7. Paymaster finalize — seal paymaster data after signing\n"}</span>
+						<span className="code-keyword">{"const "}</span>
+						{"finalized = "}
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
@@ -75,7 +85,10 @@ function CodeShowcase() {
 						<span className="code-keyword">{"undefined"}</span>
 						{",\n    { context: { signingPhase: "}
 						<span className="code-string">{"\"finalize\""}</span>
-						{" } }\n  )\n));\n\n"}
+						{" } }\n  )\n));\n"}
+						{"finalized."}
+						<span className="code-fn">{"forEach"}</span>
+						{"(([op], i) => { ops[i] = op; });\n\n"}
 						<span className="code-comment">{"// 8. Send all UserOperations concurrently\n"}</span>
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
