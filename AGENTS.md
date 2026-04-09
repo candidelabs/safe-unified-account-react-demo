@@ -16,7 +16,6 @@ src/
 ├── App.tsx                       # Root component — passkey state, error handling
 ├── App.css / index.css           # Global styles (dark theme)
 ├── main.tsx                      # React entry point
-├── utils.ts                      # hexStringToUint8Array helper
 ├── exports.d.ts                  # Ambient type declarations
 ├── vite-env.d.ts                 # Vite client types
 ├── components/

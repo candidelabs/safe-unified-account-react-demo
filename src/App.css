@@ -754,6 +754,78 @@
   border-bottom-color: var(--accent);
 }
 
+.cta-agent-tabs {
+  display: flex;
+  gap: 0.25rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-md);
+  padding: 0.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.cta-agent-tab {
+  flex: 1;
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: calc(var(--radius-md) - 2px);
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.cta-agent-tab:hover {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.cta-agent-tab-active {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-default);
+}
+
+.cta-prompt-container {
+  position: relative;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  text-align: left;
+}
+
+.cta-prompt-container:hover {
+  border-color: var(--accent-muted);
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.cta-prompt {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  line-height: 1.6;
+  color: var(--text-primary);
+  word-break: break-all;
+  letter-spacing: 0.01em;
+}
+
+.cta-copy-hint {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  transition: color 0.15s;
+}
+
+.cta-prompt-container:hover .cta-copy-hint {
+  color: var(--text-secondary);
+}
+
 /* ===== FAQ Section ===== */
 
 .faq-section {

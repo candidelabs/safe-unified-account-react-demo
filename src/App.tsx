@@ -40,10 +40,10 @@ function App() {
 	return (
 		<>
 			<header className="header">
-				<a href="https://candide.dev" target="_blank">
+				<a href="https://candide.dev" target="_blank" rel="noopener noreferrer">
 					<img src={candideLogo} className="logo" alt="Candide Atelier logo" />
 				</a>
-				<a href="https://safe.global" target="_blank">
+				<a href="https://safe.global" target="_blank" rel="noopener noreferrer">
 					<img src={safeLogo} className="logo" alt="Safe logo" />
 				</a>
 			</header>

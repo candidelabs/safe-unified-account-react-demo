@@ -1,27 +1,89 @@
+import { useState, useRef, useEffect } from "react";
+
+const SKILL_URL = "https://docs.candide.dev/safe-unified-account-agent-skill.md";
+
+const PROMPTS = [
+	{
+		label: "Claude Code",
+		text: `claude "Read ${SKILL_URL} and integrate Safe Unified Account"`,
+	},
+	{
+		label: "Cursor / Windsurf",
+		text: `Read ${SKILL_URL} and integrate Safe Unified Account into this project`,
+	},
+	{
+		label: "Codex / ChatGPT",
+		text: `Read ${SKILL_URL} and integrate Safe Unified Account into this project`,
+	},
+];
+
 function CtaCard() {
+	const [activeTab, setActiveTab] = useState(0);
+	const [copied, setCopied] = useState(false);
+	const copyTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
+
+	useEffect(() => {
+		return () => clearTimeout(copyTimeoutRef.current);
+	}, []);
+
+	const handleCopy = async () => {
+		try {
+			await navigator.clipboard?.writeText(PROMPTS[activeTab].text);
+			setCopied(true);
+			clearTimeout(copyTimeoutRef.current);
+			copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+		} catch {
+			// clipboard write failed (e.g. permissions denied)
+		}
+	};
+
 	return (
 		<div className="cta-card">
-			<h3>Ready to integrate?</h3>
-			<code className="cta-install">npm install abstractionkit@0.2.41</code>
+			<h3>Start Integrating with AI</h3>
 			<p className="action-description">
-				Both abstractionkit and this demo come with preconfigured AI Agent instructions, so you can just summon and get help with code right out of the box.
+				Use this prompt with your coding agent to integrate Safe Unified Account.
 			</p>
+			<div className="cta-agent-tabs">
+				{PROMPTS.map((p, i) => (
+					<button
+						key={p.label}
+						className={`cta-agent-tab ${activeTab === i ? "cta-agent-tab-active" : ""}`}
+						onClick={() => { setActiveTab(i); setCopied(false); }}
+					>
+						{p.label}
+					</button>
+				))}
+			</div>
+			<div className="cta-prompt-container" onClick={handleCopy}>
+				<code className="cta-prompt">{PROMPTS[activeTab].text}</code>
+				<span className="cta-copy-hint">{copied ? "Copied" : "Click to copy"}</span>
+			</div>
 			<div className="cta-links">
 				<a
-					href="https://docs.candide.dev/account-abstraction/research/safe-unified-account/"
+					href="https://docs.candide.dev/wallet/guides/chain-abstraction-overview/"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
-					Read the docs →
+					Docs →
 				</a>
 				<a
-					href="https://github.com/candidelabs/safe-unified-account-react-demo"
+					href="https://github.com/candidelabs/abstractionkit-examples"
 					target="_blank"
+					rel="noopener noreferrer"
+				>
+					Examples →
+				</a>
+				<a
+					href="https://github.com/candidelabs/safe-unified-account-demo"
+					target="_blank"
+					rel="noopener noreferrer"
 				>
 					View source →
 				</a>
 				<a
 					href="https://cal.com/candidelabs/30mins"
 					target="_blank"
+					rel="noopener noreferrer"
 				>
 					Schedule a call →
 				</a>
