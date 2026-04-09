@@ -16,11 +16,13 @@ src/
 ├── App.tsx                       # Root component — passkey state, error handling
 ├── App.css / index.css           # Global styles (dark theme)
 ├── main.tsx                      # React entry point
+├── utils.ts                      # hexStringToUint8Array helper
 ├── exports.d.ts                  # Ambient type declarations
 ├── vite-env.d.ts                 # Vite client types
 ├── components/
 │   ├── PasskeyCard.tsx           # Account creation + address display with chain badges
-│   ├── SafeCard.tsx              # Main action card — two tabs: Signers | Guardians
+│   ├── TransferCard.tsx          # Unified USDT0 balance, transfer form, per-chain status
+│   ├── AccountCard.tsx           # Main action card — two tabs: Signers | Guardians
 │   ├── CodeShowcase.tsx          # Collapsible multichain code snippet
 │   ├── CtaCard.tsx               # CTA links (docs, source, schedule call)
 │   └── FaqCard.tsx               # Educational FAQ section
@@ -30,6 +32,7 @@ src/
     ├── chains.ts                 # Dynamic N-chain config loader from env vars
     ├── passkeys.ts               # WebAuthn P-256 credential creation (ox library)
     ├── userOp.ts                 # Multichain UserOperation signing + submission
+    ├── transfer.ts               # Balance reading, split computation, LayerZero bridging
     └── storage.ts                # localStorage utilities with bigint serialization
 ```
 
@@ -41,7 +44,7 @@ React + Vite + TypeScript single-page app demonstrating **Safe Unified Account**
 
 - **logic/ separated from components/** — all blockchain interaction is in `logic/`, UI components only call into it
 - **Dynamic N-chain configuration** — chains are loaded in a loop from numbered env vars (`VITE_CHAIN1_*`, `VITE_CHAIN2_*`, …); minimum 2 chains enforced at build time in `vite.config.ts`
-- **Two-tab UI in SafeCard** — "Authorized Signers" (add/remove owners) and "Recovery Guardians" (social recovery module)
+- **Two-tab UI in AccountCard** — "Authorized Signers" (add/remove owners) and "Recovery Guardians" (social recovery module)
 - **Per-chain status tracking** — each chain gets independent status (preparing → signing → pending → success) with userOpHash, txHash, and error states
 
 ### Component hierarchy
@@ -49,7 +52,8 @@ React + Vite + TypeScript single-page app demonstrating **Safe Unified Account**
 ```
 App.tsx
 ├── PasskeyCard          — create passkey or show account address + chain badges
-├── SafeCard             — (shown after passkey exists) signer & guardian management
+├── TransferCard         — unified USDT0 balance, transfer form, per-chain status
+├── AccountCard          — (shown after passkey exists) signer & guardian management
 ├── CodeShowcase         — collapsible pseudocode of the multichain flow
 ├── CtaCard              — links to docs, source, cal.com
 └── FaqCard              — react-faq-component with dark theme
@@ -67,6 +71,9 @@ Pattern: `VITE_CHAIN{N}_*` where N starts at 1 and increments.
 | `VITE_CHAIN{N}_PAYMASTER_URL` | Yes | Candide paymaster endpoint |
 | `VITE_CHAIN{N}_NAME` | No | Human-readable name for UI |
 | `VITE_CHAIN{N}_EXPLORER_URL` | No | Block explorer base URL |
+| `VITE_CHAIN{N}_USDT0_TOKEN` | No | USDT0 token contract address |
+| `VITE_CHAIN{N}_USDT0_OFT` | No | USDT0 OFT (LayerZero) contract address |
+| `VITE_CHAIN{N}_LZ_EID` | No | LayerZero endpoint ID for cross-chain bridging |
 
 Validation in `vite.config.ts` loops through chains and throws if any required var is missing or fewer than 2 chains are configured. Default setup targets Ethereum Sepolia + Optimism Sepolia with public Candide bundler endpoints.
 
@@ -94,7 +101,7 @@ This is the core flow in `logic/userOp.ts` → `signAndSendMultiChainUserOps()`:
 8. **Paymaster finalize** — `CandidePaymaster.createSponsorPaymasterUserOperation(safeAccount, userOp, bundler, undefined, { context: { signingPhase: "finalize" } })` — seals paymaster data after signatures
 9. **Send concurrently** — `Promise.all()` submitting all chains in parallel, then wait for inclusion
 
-### Signer Management (SafeCard.tsx — Signers tab)
+### Signer Management (AccountCard.tsx — Signers tab)
 
 ```typescript
 // Add owner (returns MetaTransaction[])
@@ -107,7 +114,7 @@ safeAccount.createRemoveOwnerMetaTransaction(rpc, ownerAddress, threshold)
 safeAccount.getOwners(rpc)
 ```
 
-### Social Recovery / Guardians (SafeCard.tsx — Guardians tab)
+### Social Recovery / Guardians (AccountCard.tsx — Guardians tab)
 
 ```typescript
 const socialRecoveryModule = new SocialRecoveryModule(
@@ -163,7 +170,9 @@ const [finalizedOp] = await paymaster.createSponsorPaymasterUserOperation(
 | `src/logic/chains.ts` | `chains: ChainConfig[]` — dynamic chain config from env vars |
 | `src/logic/passkeys.ts` | `createPasskey()`, `toLocalStorageFormat()` — WebAuthn credential management |
 | `src/logic/storage.ts` | `setItem()`, `getItem()` — localStorage with bigint→hex serialization |
-| `src/components/SafeCard.tsx` | Main UI — `executeMultiChainOp()`, signer/guardian tabs, per-chain status |
+| `src/logic/transfer.ts` | Balance reading, split computation, LayerZero bridging logic |
+| `src/components/TransferCard.tsx` | Unified USDT0 balance, transfer form, per-chain status |
+| `src/components/AccountCard.tsx` | Main UI — `executeMultiChainOp()`, signer/guardian tabs, per-chain status |
 | `src/components/PasskeyCard.tsx` | Account creation, address display, chain explorer badges |
 | `src/hooks/useLocalStorageState.ts` | `useLocalStorageState<T>()` — generic localStorage-backed hook |
 | `vite.config.ts` | Build config + env var validation (enforces ≥ 2 chains) |
