@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
-	ExperimentalSafeMultiChainSigAccount as SafeAccount,
-	ExperimentalAllowAllParallelPaymaster,
+	SafeMultiChainSigAccountV1 as SafeAccount,
 	MetaTransaction,
 	SocialRecoveryModule,
 	SocialRecoveryModuleGracePeriodSelector
@@ -43,6 +42,8 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 	const [activeTab, setActiveTab] = useState<Tab>("signers");
 	const [customAddress, setCustomAddress] = useState("");
 	const [showCustomInput, setShowCustomInput] = useState(false);
+	const [retrying, setRetrying] = useState(false);
+	const lastTransactionsRef = useRef<MetaTransaction[][]>([]);
 
 	const accountAddress = getItem("accountAddress") as string;
 
@@ -112,11 +113,7 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		]);
 
 		const allTransactions = await buildTxs(safeAccount);
-
-		const paymaster = new ExperimentalAllowAllParallelPaymaster();
-		const paymasterFields = await Promise.all(
-			chains.map((chain) => paymaster.getPaymasterFieldsInitValues(chain.chainId)),
-		);
+		lastTransactionsRef.current = allTransactions;
 
 		const userOps = await Promise.all(
 			chains.map((chain, i) =>
@@ -124,49 +121,149 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 					allTransactions[i],
 					chain.jsonRpcProvider,
 					chain.bundlerUrl,
-					{
-						parallelPaymasterInitValues: paymasterFields[i],
-						expectedSigners: [passkey.pubkeyCoordinates],
-						preVerificationGasPercentageMultiplier: 120,
-					},
 				),
 			),
 		);
 
 		setStep("signing");
 
-		const responses = await signAndSendMultiChainUserOps(
+		const results = await signAndSendMultiChainUserOps(
 			chains.map((chain, i) => ({
 				userOp: userOps[i],
 				chainId: chain.chainId,
 				bundlerUrl: chain.bundlerUrl,
+				paymasterUrl: chain.paymasterUrl,
 			})),
 			passkey,
+			safeAccount,
 		);
 
 		setStep("pending");
 		setChainResults(
-			responses.map((r) => ({ userOpHash: r.userOperationHash })),
+			results.map((r) =>
+				r.status === "sent"
+					? { userOpHash: r.response.userOperationHash }
+					: { error: r.error },
+			),
 		);
 
-		const promises = responses.map((response, i) =>
-			response.included().then((receipt) => {
+		const inclusionPromises = results.map((r, i) => {
+			if (r.status !== "sent") return Promise.resolve();
+			return r.response.included().then((receipt) => {
 				setChainResults((prev) => {
 					const next = [...prev];
-					if (receipt.success) {
+					if (receipt == null) {
+						next[i] = { ...next[i], error: "No receipt returned" };
+					} else if (receipt.success) {
 						next[i] = { ...next[i], txHash: receipt.receipt.transactionHash };
 					} else {
 						next[i] = { ...next[i], error: "Execution failed" };
 					}
 					return next;
 				});
-			}),
-		);
+			});
+		});
 
-		await Promise.all(promises);
+		await Promise.all(inclusionPromises);
 		setStep("success");
 		await fetchOwners();
 		await fetchGuardians();
+	};
+
+	const handleRetryFailedChains = async () => {
+		const failedIndices = chainResults
+			.map((r, i) => (r.error ? i : -1))
+			.filter((i) => i !== -1);
+		if (failedIndices.length === 0) return;
+
+		setRetrying(true);
+		// Clear errors on failed chains
+		setChainResults((prev) => {
+			const next = [...prev];
+			for (const i of failedIndices) next[i] = {};
+			return next;
+		});
+
+		try {
+			const safeAccount = SafeAccount.initializeNewAccount([
+				passkey.pubkeyCoordinates,
+			]);
+
+			// Rebuild UserOps for failed chains only
+			const failedChains = failedIndices.map((i) => chains[i]);
+			const failedTxs = failedIndices.map((i) => lastTransactionsRef.current[i]);
+
+			const userOps = await Promise.all(
+				failedChains.map((chain, j) =>
+					safeAccount.createUserOperation(
+						failedTxs[j],
+						chain.jsonRpcProvider,
+						chain.bundlerUrl,
+					),
+				),
+			);
+
+			// Full sign flow for failed chains (new passkey prompt)
+			const results = await signAndSendMultiChainUserOps(
+				failedChains.map((chain, j) => ({
+					userOp: userOps[j],
+					chainId: chain.chainId,
+					bundlerUrl: chain.bundlerUrl,
+					paymasterUrl: chain.paymasterUrl,
+				})),
+				passkey,
+				safeAccount,
+			);
+
+			// Map results back to original chain indices
+			setChainResults((prev) => {
+				const next = [...prev];
+				results.forEach((r, j) => {
+					const i = failedIndices[j];
+					next[i] = r.status === "sent"
+						? { userOpHash: r.response.userOperationHash }
+						: { error: r.error };
+				});
+				return next;
+			});
+
+			// Wait for inclusion on successfully sent retries
+			const inclusionPromises = results.map((r, j) => {
+				if (r.status !== "sent") return Promise.resolve();
+				const i = failedIndices[j];
+				return r.response.included().then((receipt) => {
+					setChainResults((prev) => {
+						const next = [...prev];
+						if (receipt == null) {
+							next[i] = { ...next[i], error: "No receipt returned" };
+						} else if (receipt.success) {
+							next[i] = { ...next[i], txHash: receipt.receipt.transactionHash };
+						} else {
+							next[i] = { ...next[i], error: "Execution failed" };
+						}
+						return next;
+					});
+				});
+			});
+
+			await Promise.all(inclusionPromises);
+			await fetchOwners();
+			await fetchGuardians();
+		} catch (err) {
+			// Pre-send failure (e.g. passkey cancelled) — restore errors
+			const errMsg = err instanceof Error ? err.message : "Unknown error";
+			setChainResults((prev) => {
+				const next = [...prev];
+				for (const i of failedIndices) {
+					if (!next[i].txHash && !next[i].userOpHash) {
+						next[i] = { error: errMsg };
+					}
+				}
+				return next;
+			});
+		} finally {
+			setRetrying(false);
+		}
 	};
 
 	const resolveAddress = (): string | null => {
@@ -319,7 +416,8 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		result: ChainResult,
 	) => {
 		const chain = chains[chainIndex];
-		const isPending = result.userOpHash && !result.txHash && !result.error;
+		const isEmpty = !result.userOpHash && !result.txHash && !result.error;
+		const isPending = (result.userOpHash && !result.txHash && !result.error) || (isEmpty && retrying);
 		const isSuccess = !!result.txHash;
 		const isError = !!result.error;
 
@@ -485,45 +583,67 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
 			{(step === "pending" || step === "success") && (
 				<>
-					{step === "success" && actionSummary && (
-						<div className="success-banner">
-							<p>
-								{actionLabel} across {chains.length} chains with a single signature
-							</p>
-							<code className="owner-address">
-								{actionSummary.address}
-							</code>
-						</div>
-					)}
+					{step === "success" && actionSummary && (() => {
+						const succeededCount = chainResults.filter((r) => r.txHash).length;
+						if (succeededCount === 0) return null;
+						return (
+							<div className="success-banner">
+								<p>
+									{actionLabel} across {succeededCount} chain{succeededCount > 1 ? "s" : ""} with a single signature
+								</p>
+								<code className="owner-address">
+									{actionSummary.address}
+								</code>
+							</div>
+						);
+					})()}
 					<div className="chain-results">
 						{chainResults.map((result, i) =>
 							renderChainStatusCard(i, result),
 						)}
 					</div>
-					{step === "success" && (
-						<>
-							<div className="completion-metrics">
-								<div className="metric">
-									<span className="metric-value">1</span>
-									<span className="metric-label">signature</span>
-								</div>
-								<div className="metric">
-									<span className="metric-value">{chains.length}</span>
-									<span className="metric-label">chains updated</span>
-								</div>
-							</div>
-							<p className="metric-contrast">
-								Without Unified Account: {chains.length} separate signatures, {chains.length} gas payments
-							</p>
-							<button
-								className="primary-button"
-								style={{ marginTop: "1rem" }}
-								onClick={() => setStep("idle")}
-							>
-								Back to Account
-							</button>
-						</>
-					)}
+					{step === "success" && (() => {
+						const failedCount = chainResults.filter((r) => r.error).length;
+						const succeededCount = chainResults.filter((r) => r.txHash).length;
+						return (
+							<>
+								{failedCount > 0 && (
+									<button
+										className="retry-button"
+										style={{ marginTop: "0.75rem" }}
+										onClick={handleRetryFailedChains}
+										disabled={retrying}
+									>
+										{retrying ? "Retrying..." : `Retry ${failedCount} failed chain${failedCount > 1 ? "s" : ""}`}
+									</button>
+								)}
+								{succeededCount > 0 && (
+									<>
+										<div className="completion-metrics">
+											<div className="metric">
+												<span className="metric-value">1</span>
+												<span className="metric-label">signature</span>
+											</div>
+											<div className="metric">
+												<span className="metric-value">{succeededCount}</span>
+												<span className="metric-label">chain{succeededCount > 1 ? "s" : ""} updated</span>
+											</div>
+										</div>
+										<p className="metric-contrast">
+											Without Unified Account: {chains.length} separate signatures, {chains.length} gas payments
+										</p>
+									</>
+								)}
+								<button
+									className="primary-button"
+									style={{ marginTop: "1rem" }}
+									onClick={() => setStep("idle")}
+								>
+									Back to Account
+								</button>
+							</>
+						);
+					})()}
 				</>
 			)}
 

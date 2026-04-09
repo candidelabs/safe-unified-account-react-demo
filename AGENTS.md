@@ -65,6 +65,7 @@ Pattern: `VITE_CHAIN{N}_*` where N starts at 1 and increments.
 | `VITE_CHAIN{N}_ID` | Yes | Blockchain chain ID |
 | `VITE_CHAIN{N}_BUNDLER_URL` | Yes | Bundler endpoint |
 | `VITE_CHAIN{N}_JSON_RPC_PROVIDER` | Yes | JSON-RPC provider URL |
+| `VITE_CHAIN{N}_PAYMASTER_URL` | Yes | Candide paymaster endpoint |
 | `VITE_CHAIN{N}_NAME` | No | Human-readable name for UI |
 | `VITE_CHAIN{N}_EXPLORER_URL` | No | Block explorer base URL |
 
@@ -76,7 +77,7 @@ Validation in `vite.config.ts` loops through chains and throws if any required v
 
 | Package | Purpose |
 |---------|---------|
-| `abstractionkit` (^0.2.35) | Safe Unified Account SDK — account management, multichain signing, paymaster, social recovery |
+| `abstractionkit` (^0.2.41) | Safe Unified Account SDK — account management, multichain signing, paymaster, social recovery |
 | `ox` (^0.8.4) | WebAuthn P-256 credential creation and signing (`ox/WebAuthnP256`) |
 | `viem` (^2.31.7) | Random address generation (`generatePrivateKey` + `privateKeyToAddress` from `viem/accounts`) |
 
@@ -84,14 +85,15 @@ Validation in `vite.config.ts` loops through chains and throws if any required v
 
 This is the core flow in `logic/userOp.ts` → `signAndSendMultiChainUserOps()`:
 
-1. **Initialize account** — `ExperimentalSafeMultiChainSigAccount.initializeNewAccount([pubkeyCoordinates])`
+1. **Initialize account** — `SafeMultiChainSigAccountV1.initializeNewAccount([pubkeyCoordinates])`
 2. **Build MetaTransactions** — e.g. `createAddOwnerWithThresholdMetaTransactions()` or guardian operations
-3. **Create UserOperations per chain** — `safeAccount.createUserOperation(txs, rpc, bundler, { ...paymasterInitFields })` — paymaster init fields are spread into the options
-4. **Compute Merkle root hash** — `SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(userOperationsToSign)`
-5. **Sign once with WebAuthn** — single `ox/WebAuthnP256.sign({ challenge: multiChainHash })` call, one biometric prompt
-6. **Expand to per-chain signatures** — `SafeAccount.formatSignaturesToUseroperationsSignatures(userOperationsToSign, [signerSignaturePair], { isInit })`
-7. **Apply paymaster data AFTER signatures** — `ExperimentalAllowAllParallelPaymaster.getApprovedPaymasterData(userOp)` (order matters: signatures must be set first)
-8. **Send concurrently** — `Promise.all()` submitting all chains in parallel, then wait for inclusion
+3. **Create UserOperations per chain** — `safeAccount.createUserOperation(txs, rpc, bundler)`
+4. **Paymaster commit** — `CandidePaymaster.createSponsorPaymasterUserOperation(safeAccount, userOp, bundler, undefined, { context: { signingPhase: "commit" } })` — gas estimation + paymaster fields
+5. **Compute Merkle root hash** — `SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(userOperationsToSign)`
+6. **Sign once with WebAuthn** — single `ox/WebAuthnP256.sign({ challenge: multiChainHash })` call, one biometric prompt
+7. **Expand to per-chain signatures** — `SafeAccount.formatSignaturesToUseroperationsSignatures(userOperationsToSign, [signerSignaturePair], { isInit })`
+8. **Paymaster finalize** — `CandidePaymaster.createSponsorPaymasterUserOperation(safeAccount, userOp, bundler, undefined, { context: { signingPhase: "finalize" } })` — seals paymaster data after signatures
+9. **Send concurrently** — `Promise.all()` submitting all chains in parallel, then wait for inclusion
 
 ### Signer Management (SafeCard.tsx — Signers tab)
 
@@ -139,13 +141,19 @@ safeAccount.isModuleEnabled(rpc, socialRecoveryModule.moduleAddress)
 ### Paymaster
 
 ```typescript
-const paymaster = new ExperimentalAllowAllParallelPaymaster();
+const paymaster = new CandidePaymaster(paymasterUrl);
 
-// Step 1: Get init fields (spread into createUserOperation options)
-const initFields = paymaster.getPaymasterFieldsInitValues(chainId);
+// Step 1: Commit — gas estimation + paymaster fields (before signing)
+const [committedOp] = await paymaster.createSponsorPaymasterUserOperation(
+  safeAccount, userOp, bundlerUrl, undefined,
+  { context: { signingPhase: "commit" } },
+);
 
-// Step 2: After signatures are set, get approved data
-paymaster.getApprovedPaymasterData(userOp);
+// Step 2: Finalize — seal paymaster data (after signatures are set)
+const [finalizedOp] = await paymaster.createSponsorPaymasterUserOperation(
+  safeAccount, userOp, bundlerUrl, undefined,
+  { context: { signingPhase: "finalize" } },
+);
 ```
 
 ## Key Files Reference

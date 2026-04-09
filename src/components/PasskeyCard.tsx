@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ExperimentalSafeMultiChainSigAccount as SafeAccount } from 'abstractionkit'
+import { SafeMultiChainSigAccountV1 as SafeAccount } from 'abstractionkit'
 
 import { PasskeyLocalStorageFormat } from '../logic/passkeys'
 import { setItem } from '../logic/storage'

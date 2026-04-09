@@ -2,7 +2,7 @@ function CtaCard() {
 	return (
 		<div className="cta-card">
 			<h3>Ready to integrate?</h3>
-			<code className="cta-install">npm install abstractionkit@0.2.39</code>
+			<code className="cta-install">npm install abstractionkit@0.2.41</code>
 			<p className="action-description">
 				Both abstractionkit and this demo come with preconfigured AI Agent instructions, so you can just summon and get help with code right out of the box.
 			</p>

@@ -337,6 +337,29 @@
   font-family: var(--font-mono);
 }
 
+.retry-button {
+  margin-top: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--error-muted);
+  color: var(--error);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-button:not(:disabled):hover {
+  background: var(--error-muted);
+  border-color: rgba(248, 113, 113, 0.35);
+}
+
+.retry-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Success banner */
 .success-banner {
   background: var(--success-muted);
