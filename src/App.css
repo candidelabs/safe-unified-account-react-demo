@@ -754,6 +754,49 @@
   border-bottom-color: var(--accent);
 }
 
+.cta-prompt-container {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.cta-prompt {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  padding: 0.75rem 1rem;
+  color: var(--accent);
+  text-align: left;
+  white-space: nowrap;
+  overflow-x: auto;
+  letter-spacing: 0.01em;
+}
+
+.cta-copy-button {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+  border: none;
+  border-left: 1px solid var(--border-default);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  min-width: 4.5rem;
+}
+
+.cta-copy-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
 /* ===== FAQ Section ===== */
 
 .faq-section {
