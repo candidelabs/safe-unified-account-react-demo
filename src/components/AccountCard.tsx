@@ -29,7 +29,7 @@ interface ActionSummary {
 
 const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
-function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
+function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 	const [owners, setOwners] = useState<string[]>([]);
 	const [guardians, setGuardians] = useState<string[]>([]);
 	const [moduleEnabled, setModuleEnabled] = useState(false);
@@ -657,4 +657,4 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 	);
 }
 
-export { SafeCard };
+export { AccountCard };
