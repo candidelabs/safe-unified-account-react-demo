@@ -28,434 +28,111 @@ Ask the developer these 4 questions before writing any code:
 - If unsure, suggest 2-3 Sepolia testnets to start — zero signup required
 - Fetch the current supported chain list from https://docs.candide.dev/wallet/bundler/rpc-endpoints/ — do not rely on hardcoded lists, as networks are added over time
 
-**Then:**
+**Then, before writing code:**
 - Fetch the recommended SDK version from https://docs.candide.dev/account-abstraction/research/safe-unified-account/ — install whichever version the docs specify (pinned or latest)
+- Read the integration guide and code examples at the references below to get the current API patterns
 
 ## Setup
 
-Install the core dependency:
-```bash
-npm install abstractionkit
-```
+Install `abstractionkit` as the core dependency. For utility functions (key generation, address derivation), use whichever Ethereum library the developer already has — **viem** or **ethers**. Both work with abstractionkit. Do not add viem to a project that already uses ethers, or vice versa.
 
-For utility functions (key generation, address derivation), use whichever Ethereum library the developer already has — **viem** or **ethers**. Both work with abstractionkit. If they have neither, ask which they prefer and install it. Do not add viem to a project that already uses ethers, or vice versa.
+If passkeys chosen, the passkey skill specifies additional dependencies.
 
-If passkeys chosen, the passkey skill specifies additional dependencies (`ox`, etc).
+## Chain Configuration
 
-### Chain Configuration
+Each chain needs **three separate endpoints**:
 
-Each chain needs three endpoints:
+1. **Bundler URL** — Candide endpoint, for submitting UserOperations
+2. **Paymaster URL** — Candide endpoint, for gas sponsorship or token payment
+3. **JSON-RPC provider URL** — standard RPC (NOT Candide), for reading state, nonces, gas prices
 
-```typescript
-interface ChainConfig {
-  chainId: bigint;
-  bundlerUrl: string;     // Candide endpoint
-  rpcUrl: string;         // Standard JSON-RPC (separate from Candide)
-  paymasterUrl: string;   // Candide endpoint
-}
-```
+This is a common gotcha: the Candide public endpoint (`https://api.candide.dev/public/v3/{chainId}`) serves as both bundler and paymaster, but the developer also needs a separate standard JSON-RPC provider per chain (e.g., `publicnode.com`, `drpc.org`, Infura, Alchemy).
 
-**Candide public endpoints** (bundler + paymaster, no signup):
-```
-https://api.candide.dev/public/v3/{chainId}
-```
-
-**JSON-RPC provider is separate.** The Candide endpoint is for bundler and paymaster only. Each chain also needs a standard JSON-RPC URL for reading state, nonces, and gas prices. Use public RPCs (`publicnode.com`, `drpc.org`) or providers (Infura, Alchemy).
-
-Example config for two testnet chains:
-```typescript
-const chains: ChainConfig[] = [
-  {
-    chainId: 11155111n, // Ethereum Sepolia
-    bundlerUrl: 'https://api.candide.dev/public/v3/11155111',
-    rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com',
-    paymasterUrl: 'https://api.candide.dev/public/v3/11155111',
-  },
-  {
-    chainId: 11155420n, // Optimism Sepolia
-    bundlerUrl: 'https://api.candide.dev/public/v3/11155420',
-    rpcUrl: 'https://sepolia.optimism.io',
-    paymasterUrl: 'https://api.candide.dev/public/v3/11155420',
-  },
-];
-```
-
-For higher rate limits, get dedicated endpoints from [Candide Dashboard](https://dashboard.candide.dev/).
-
-## Account Initialization
-
-```typescript
-import {
-  SafeMultiChainSigAccountV1 as SafeAccount,
-  CandidePaymaster,
-} from 'abstractionkit';
-```
-
-### ECDSA
-
-```typescript
-// New account — address is deterministic (CREATE2), can be shown before first tx
-const safeAccount = SafeAccount.initializeNewAccount([ownerAddress]);
-console.log('Account address:', safeAccount.accountAddress);
-
-// Existing account (already deployed)
-const safeAccount = new SafeAccount(knownAddress);
-```
-
-The developer is responsible for storing the private key securely for future signing sessions (env var, encrypted store, hardware module — their choice).
-
-### Passkeys
-
-Credential creation, storage, and signing are handled by the **passkey integration skill**. This skill only needs the resulting public key coordinates:
-
-```typescript
-// After passkey creation (handled by passkey skill):
-const safeAccount = SafeAccount.initializeNewAccount([{ x: pubkeyX, y: pubkeyY }]);
-```
+Fetch the current list of supported chains and public endpoint URLs from https://docs.candide.dev/wallet/bundler/public-endpoints/. For higher rate limits, get dedicated endpoints from [Candide Dashboard](https://dashboard.candide.dev/).
 
 ## Core Multichain Flow
 
-The flow is **operation-agnostic** — any `{ to, value, data }` MetaTransaction works. ETH transfers, ERC-20 transfers, contract calls, module operations, batched transactions. The same transaction can go to all chains, or different transactions per chain.
+The integration follows an 8-step flow. Fetch the full code patterns from the docs and examples listed in References below. Here is the conceptual flow:
 
-### Step 1: Build MetaTransactions
+1. **Build MetaTransactions** — the developer's app-specific logic. The flow is operation-agnostic: any `{ to, value, data }` MetaTransaction works (transfers, contract calls, owner management, module operations). The same transaction can go to all chains, or different transactions per chain.
+2. **Create UserOperations per chain** — one `createUserOperation()` call per chain, passing the MetaTransactions, RPC URL, and bundler URL.
+3. **Paymaster commit** — call the paymaster with `signingPhase: "commit"` on each chain. Gets gas estimates and fills paymaster fields. For ERC-20 token paymaster, use `createTokenPaymasterUserOperation()` instead.
+4. **Sign** — differs by signer type:
+   - **ECDSA**: single `signUserOperations()` call handles the multichain Merkle hash, signing, and per-chain signature formatting in one step.
+   - **Passkeys**: delegate to the passkey skill. Provide the `userOpsToSign` array (each entry has `userOperation` + `chainId`). The passkey skill returns the per-chain `signatures[]` array.
+5. **Paymaster finalize** — call the paymaster again with `signingPhase: "finalize"` to seal paymaster data after signatures are set.
+6. **Send concurrently** — submit all UserOperations in parallel using `Promise.allSettled()` (not `Promise.all()`) so one chain's failure doesn't block others. Wait for inclusion with `response.included()`.
 
-```typescript
-// Example: add an owner across all chains
-const tx = safeAccount.createStandardAddOwnerWithThresholdMetaTransaction(
-  newOwnerAddress, 1
-);
-// Same tx for all chains, or build different txs per chain
-const transactionsPerChain = chains.map(() => [tx]);
-```
-
-### Step 2: Create UserOperations per chain
-
-```typescript
-let userOps = await Promise.all(
-  chains.map((chain, i) =>
-    safeAccount.createUserOperation(
-      transactionsPerChain[i], chain.rpcUrl, chain.bundlerUrl,
-    )
-  )
-);
-```
-
-### Step 3: Paymaster commit — gas estimation + sponsorship
-
-```typescript
-const commitOverrides = { context: { signingPhase: "commit" as const } };
-
-const commitResults = await Promise.all(
-  chains.map((chain, i) => {
-    const paymaster = new CandidePaymaster(chain.paymasterUrl);
-    return paymaster.createSponsorPaymasterUserOperation(
-      safeAccount, userOps[i], chain.bundlerUrl, undefined, commitOverrides,
-    );
-  })
-);
-// Update userOps with paymaster fields
-commitResults.forEach(([committedOp], i) => { userOps[i] = committedOp; });
-```
-
-For ERC-20 token paymaster, see the Paymaster Integration section.
-
-### Steps 4-6: Sign
-
-**ECDSA** — one method call handles multichain hash, signing, and per-chain signature formatting:
-
-```typescript
-const userOpsToSign = userOps.map((op, i) => ({
-  userOperation: op,
-  chainId: chains[i].chainId,
-}));
-
-const signatures = safeAccount.signUserOperations(
-  userOpsToSign, [privateKey],
-);
-
-userOps.forEach((op, i) => { op.signature = signatures[i]; });
-```
-
-**Passkeys** — delegate to the passkey skill. Provide `userOpsToSign` (same array as above). The passkey skill returns the per-chain `signatures[]` array. The interface:
-- Input: `userOpsToSign` array of `{ userOperation, chainId }`
-- Output: `signatures` string array, one per chain
-- Key methods used: `getMultiChainSingleSignatureUserOperationsEip712Hash()`, `createWebAuthnSignature()`, `formatSignaturesToUseroperationsSignatures()`
-
-### Step 7: Paymaster finalize — seal after signing
-
-```typescript
-const finalizeOverrides = { context: { signingPhase: "finalize" as const } };
-
-const finalizeResults = await Promise.all(
-  chains.map((chain, i) => {
-    const paymaster = new CandidePaymaster(chain.paymasterUrl);
-    return paymaster.createSponsorPaymasterUserOperation(
-      safeAccount, userOps[i], chain.bundlerUrl, undefined, finalizeOverrides,
-    );
-  })
-);
-finalizeResults.forEach(([finalizedOp], i) => { userOps[i] = finalizedOp; });
-```
-
-### Step 8: Send concurrently
-
-Use `Promise.allSettled` — one chain's failure must not block others.
-
-```typescript
-const results = await Promise.allSettled(
-  userOps.map((op, i) => {
-    const sender = new SafeAccount(op.sender);
-    return sender.sendUserOperation(op, chains[i].bundlerUrl);
-  })
-);
-
-// Track per-chain results
-const chainResults = results.map((result) => {
-  if (result.status === 'fulfilled') {
-    return { status: 'sent' as const, response: result.value };
-  } else {
-    const err = result.reason;
-    return { status: 'failed' as const, error: err?.message || String(err) };
-  }
-});
-
-// Wait for inclusion on successful sends
-await Promise.all(
-  chainResults.map((r, i) => {
-    if (r.status !== 'sent') return;
-    return r.response.included().then((receipt) => {
-      if (receipt?.success) {
-        console.log(`Chain ${chains[i].chainId}: confirmed, tx ${receipt.receipt.transactionHash}`);
-      } else {
-        console.log(`Chain ${chains[i].chainId}: execution failed`);
-      }
-    });
-  })
-);
-```
+The ECDSA multichain example and passkey multichain example in the References section show complete, runnable implementations of this flow.
 
 ## Paymaster Integration
 
-### Gas Sponsorship (CandidePaymaster)
+Two paymaster options, both using the same two-phase commit/finalize pattern:
 
-Two-phase pattern — shown in Steps 3 and 7 above:
-1. **Commit** (`signingPhase: "commit"`) — before signing. Gets gas estimates, fills paymaster fields.
-2. **Finalize** (`signingPhase: "finalize"`) — after signing. Seals paymaster data with final signature.
+**Gas sponsorship** (`createSponsorPaymasterUserOperation`): App pays gas on behalf of the user. The optional `sponsorshipPolicyId` parameter enables gated sponsorship policies. See the paymaster docs in References.
 
-The `sponsorshipPolicyId` parameter (4th arg) is optional — use it for gated sponsorship policies. Pass `undefined` for default sponsorship.
+**ERC-20 token payment** (`createTokenPaymasterUserOperation`): User pays gas in tokens (USDC, USDT, etc). The paymaster automatically prepends a token approval transaction during the commit phase. Same two-phase pattern.
 
-```typescript
-const paymaster = new CandidePaymaster(paymasterUrl);
-
-// With sponsorship policy
-const [op] = await paymaster.createSponsorPaymasterUserOperation(
-  safeAccount, userOp, bundlerUrl, 'your-policy-id', commitOverrides,
-);
-
-// Without (default sponsorship)
-const [op] = await paymaster.createSponsorPaymasterUserOperation(
-  safeAccount, userOp, bundlerUrl, undefined, commitOverrides,
-);
-```
-
-### ERC-20 Token Payment
-
-User pays gas in ERC-20 tokens instead of native currency. Replace `createSponsorPaymasterUserOperation` with `createTokenPaymasterUserOperation` in Steps 3 and 7:
-
-```typescript
-const paymaster = new CandidePaymaster(paymasterUrl);
-const tokenAddress = '0x...'; // USDC, USDT, etc.
-
-// Commit phase (Step 3)
-const op = await paymaster.createTokenPaymasterUserOperation(
-  safeAccount, userOp, tokenAddress, bundlerUrl, commitOverrides,
-);
-
-// Finalize phase (Step 7) — same call with finalize overrides
-const finalOp = await paymaster.createTokenPaymasterUserOperation(
-  safeAccount, userOp, tokenAddress, bundlerUrl, finalizeOverrides,
-);
-```
-
-The paymaster automatically prepends a token approval transaction during the commit phase. Same two-phase pattern as gas sponsorship.
-
-Check supported tokens:
-```typescript
-const supported = await paymaster.isSupportedERC20Token(tokenAddress);
-const rate = await paymaster.fetchTokenPaymasterExchangeRate(tokenAddress);
-```
+Both require calling the paymaster twice: once before signing (commit) and once after (finalize). The docs explain why: the module strips paymaster signatures before hashing, so the user signs before the paymaster, and the paymaster seals its data after.
 
 ## Partial Failure Handling
 
-**There is no cross-chain atomicity.** A UserOp can succeed on chain A and fail on chain B. The application MUST handle this.
+**There is no cross-chain atomicity.** A UserOp can succeed on chain A and fail on chain B. The application MUST handle this. This is the most important section of this skill — the docs and examples show the happy path, but production apps need failure handling.
 
 ### Per-chain status tracking
 
-Every multichain operation must track independent status per chain:
-
-```typescript
-type ChainStatus =
-  | { state: 'pending' }
-  | { state: 'sent'; userOpHash: string }
-  | { state: 'confirmed'; txHash: string }
-  | { state: 'failed'; error: string };
-```
+Every multichain operation must track independent status per chain (pending → sent → confirmed / failed). Always use `Promise.allSettled()` for sending so one chain's failure doesn't block others.
 
 ### Retry failed chains
 
 When some chains fail:
-1. Store the original `transactionsPerChain` array so they can be resubmitted
-2. Identify failed chain indices from `chainResults`
+1. Store the original transactions so they can be resubmitted
+2. Identify failed chain indices from results
 3. Rebuild UserOps for only the failed chains
-4. Run steps 2-8 again for just the failed subset (new signature required)
+4. Run the full sign-and-send flow again for just the failed subset (new signature required)
 5. Update status per chain
 
 Nonces are per-chain with no global ordering — retrying failed chains does not conflict with already-succeeded chains.
 
 ### Account security operations vs value operations
 
-**Account security operations** (add/remove owner, change threshold, enable module): Partial failure means different security configurations across chains. The app MUST surface this and provide retry/sync. Retrying is safe — adding an already-added owner reverts cleanly.
+**Account security operations** (add/remove owner, change threshold, enable module): Partial failure means different security configurations across chains. This is a security concern. The app MUST surface this to the user and provide retry/sync. Retrying is safe — these operations are idempotent (adding an already-added owner reverts cleanly).
 
-**Value operations** (transfers, swaps): Partial failure may not be safely retryable (e.g., a swap already executed). Show per-chain results and let the user decide. Time-sensitive operations may need to be rebuilt rather than retried.
+**Value operations** (transfers, swaps): Partial failure may not be safely retryable (e.g., a swap already executed at a different price). Show per-chain results and let the user decide. Time-sensitive operations may need to be rebuilt rather than retried.
 
 ### Pre-submission consistency check
 
-Before building multichain security operations, verify account state is consistent across chains:
+Before building multichain security operations, verify account state is consistent across chains by reading current owners/state on all target chains. If a previous partial failure left different configurations on different chains, warn the developer before proceeding.
 
-```typescript
-const ownersPerChain = await Promise.all(
-  chains.map(chain => safeAccount.getOwners(chain.rpcUrl))
-);
-// Compare — if owners differ, warn the developer before proceeding
-```
+### Key persistence
+
+- **ECDSA**: The developer is responsible for securely storing the private key for future signing sessions (env var, encrypted store, hardware module — their choice).
+- **Passkeys**: Credential persistence is handled by the passkey skill.
 
 ## Verification
 
-After integration, produce a standalone test script. This uses ECDSA with an auto-generated key to verify the full flow on testnet — no browser needed.
+After integration, produce a standalone test script that runs the full 8-step flow on testnet using ECDSA with an auto-generated key — no browser needed. Use the ECDSA multichain example in References as the template. The script should:
 
-```typescript
-// Using viem — if developer uses ethers, substitute with ethers.Wallet.createRandom()
-import { generatePrivateKey, privateKeyToAccount } from 'viem/accounts';
-import {
-  SafeMultiChainSigAccountV1 as SafeAccount,
-  CandidePaymaster,
-} from 'abstractionkit';
+1. Auto-generate an owner keypair
+2. Initialize a new Safe account
+3. Build a test MetaTransaction (e.g., add a random owner)
+4. Run the complete flow on 2-3 testnet chains
+5. Verify the operation succeeded on all chains (e.g., check `getOwners()`)
+6. Print per-chain results
 
-async function verify() {
-  // Auto-generate owner for testing
-  // ethers alternative: const wallet = ethers.Wallet.createRandom();
-  const privateKey = generatePrivateKey();
-  const owner = privateKeyToAccount(privateKey);
+Run with `npx tsx verify.ts`.
 
-  const chains = [
-    { chainId: 11155111n, bundlerUrl: 'https://api.candide.dev/public/v3/11155111', rpcUrl: 'https://ethereum-sepolia-rpc.publicnode.com', paymasterUrl: 'https://api.candide.dev/public/v3/11155111' },
-    { chainId: 11155420n, bundlerUrl: 'https://api.candide.dev/public/v3/11155420', rpcUrl: 'https://sepolia.optimism.io', paymasterUrl: 'https://api.candide.dev/public/v3/11155420' },
-  ];
+## References
 
-  const safeAccount = SafeAccount.initializeNewAccount([owner.address]);
-  console.log('Account:', safeAccount.accountAddress);
-
-  // Build test transaction: add a random owner
-  // ethers alternative: ethers.Wallet.createRandom().address
-  const newOwner = privateKeyToAccount(generatePrivateKey()).address;
-  const tx = safeAccount.createStandardAddOwnerWithThresholdMetaTransaction(newOwner, 1);
-
-  // Create UserOps
-  let userOps = await Promise.all(
-    chains.map(chain => safeAccount.createUserOperation([tx], chain.rpcUrl, chain.bundlerUrl))
-  );
-
-  // Paymaster commit
-  const commitOverrides = { context: { signingPhase: "commit" as const } };
-  const commitResults = await Promise.all(
-    chains.map((chain, i) =>
-      new CandidePaymaster(chain.paymasterUrl)
-        .createSponsorPaymasterUserOperation(safeAccount, userOps[i], chain.bundlerUrl, undefined, commitOverrides)
-    )
-  );
-  commitResults.forEach(([op], i) => { userOps[i] = op; });
-
-  // Sign — single call for all chains
-  const sigs = safeAccount.signUserOperations(
-    userOps.map((op, i) => ({ userOperation: op, chainId: chains[i].chainId })),
-    [privateKey],
-  );
-  userOps.forEach((op, i) => { op.signature = sigs[i]; });
-
-  // Paymaster finalize
-  const finalizeOverrides = { context: { signingPhase: "finalize" as const } };
-  const finalResults = await Promise.all(
-    chains.map((chain, i) =>
-      new CandidePaymaster(chain.paymasterUrl)
-        .createSponsorPaymasterUserOperation(safeAccount, userOps[i], chain.bundlerUrl, undefined, finalizeOverrides)
-    )
-  );
-  finalResults.forEach(([op], i) => { userOps[i] = op; });
-
-  // Send
-  const results = await Promise.allSettled(
-    userOps.map((op, i) => new SafeAccount(op.sender).sendUserOperation(op, chains[i].bundlerUrl))
-  );
-
-  for (const [i, result] of results.entries()) {
-    if (result.status === 'fulfilled') {
-      console.log(`Chain ${chains[i].chainId}: sent, waiting...`);
-      const receipt = await result.value.included();
-      console.log(`Chain ${chains[i].chainId}: ${receipt?.success ? 'confirmed' : 'failed'}`, receipt?.receipt?.transactionHash ?? '');
-    } else {
-      console.log(`Chain ${chains[i].chainId}: error -`, result.reason?.message);
-    }
-  }
-
-  // Verify
-  const owners = await Promise.all(chains.map(c => safeAccount.getOwners(c.rpcUrl)));
-  for (const [i, o] of owners.entries()) {
-    const has = o.map((a: string) => a.toLowerCase()).includes(newOwner.toLowerCase());
-    console.log(`Chain ${chains[i].chainId} owners:`, has ? 'NEW OWNER ADDED' : 'NOT FOUND', o);
-  }
-}
-
-verify().catch(console.error);
-```
-
-Run: `npx tsx verify.ts`
-
-## SDK Quick Reference
-
-### Key Types
-
-| Type | Description |
-|------|-------------|
-| `SafeMultiChainSigAccountV1` | Multi-chain Safe account. Aliased as `SafeAccount` in examples. |
-| `CandidePaymaster` | Gas sponsorship and token paymaster. |
-| `MetaTransaction` | `{ to: string, value: bigint, data: string }` — any on-chain operation. |
-| `UserOperationV9` | ERC-4337 UserOperation for EntryPoint v0.9. |
-| `SendUseroperationResponse` | Returned by `sendUserOperation()`. Has `.userOperationHash` and `.included()`. |
-| `SignerSignaturePair` | `{ signer: string \| WebauthnPublicKey, signature: string }` — for passkey flow. |
-| `WebauthnSignatureData` | `{ authenticatorData, clientDataFields, rs }` — for passkey flow. |
-
-### Key Methods
-
-| Method | Description |
-|--------|-------------|
-| `SafeAccount.initializeNewAccount(owners)` | Create new account from owner addresses or WebAuthn public keys. Returns account with deterministic address. |
-| `new SafeAccount(address)` | Load existing deployed account. |
-| `safeAccount.createUserOperation(txs, rpcUrl, bundlerUrl)` | Build unsigned UserOperation from MetaTransactions. |
-| `safeAccount.signUserOperations(opsToSign, privateKeys)` | **ECDSA only.** Sign multiple chains with one call. Returns per-chain signatures. |
-| `SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(opsToSign)` | **Passkey flow.** Compute Merkle root hash for signing. |
-| `SafeAccount.createWebAuthnSignature(signatureData)` | **Passkey flow.** Encode WebAuthn signature for on-chain verification. |
-| `SafeAccount.formatSignaturesToUseroperationsSignatures(opsToSign, signerPairs, overrides)` | **Passkey flow.** Expand single signature into per-chain signatures with Merkle proofs. |
-| `safeAccount.sendUserOperation(userOp, bundlerUrl)` | Submit signed UserOperation to bundler. |
-| `response.included(timeoutSeconds?)` | Wait for UserOperation inclusion. Returns receipt with `success` and `transactionHash`. |
-| `safeAccount.getOwners(rpcUrl)` | Read current Safe owners from chain. |
-| `paymaster.createSponsorPaymasterUserOperation(account, op, bundler, policyId?, overrides?)` | Gas sponsorship — commit or finalize phase. |
-| `paymaster.createTokenPaymasterUserOperation(account, op, token, bundler)` | ERC-20 token gas payment. |
-
-### Resources
-
-- [Safe Unified Account docs](https://docs.candide.dev/account-abstraction/research/safe-unified-account/)
+**Docs:**
+- [Safe Unified Account — integration guide + recommended SDK version](https://docs.candide.dev/account-abstraction/research/safe-unified-account/)
 - [AbstractionKit SDK docs](https://docs.candide.dev)
 - [Supported networks](https://docs.candide.dev/wallet/bundler/rpc-endpoints/)
 - [Public endpoints](https://docs.candide.dev/wallet/bundler/public-endpoints/)
-- [Candide Dashboard](https://dashboard.candide.dev/) (dedicated endpoints)
-- [Demo source code](https://github.com/candidelabs/safe-unified-account-react-demo)
+- [Passkeys integration guide](https://docs.candide.dev/wallet/plugins/passkeys/)
+- [Candide Dashboard](https://dashboard.candide.dev/) — dedicated endpoints with higher rate limits
+
+**Code examples:**
+- [ECDSA multichain example](https://github.com/candidelabs/abstractionkit-examples/blob/main/chain-abstraction/add-owner.ts) — complete runnable script, ECDSA signing, 2-chain add-owner
+- [Passkey multichain example](https://github.com/candidelabs/abstractionkit-examples/blob/main/chain-abstraction/add-owner-passkey.ts) — complete runnable script, WebAuthn signing, 2-chain add-owner
+- [Demo app source](https://github.com/candidelabs/safe-unified-account-react-demo) — React demo with partial failure handling, retry logic, per-chain status tracking (see `src/logic/userOp.ts` for the flow, `src/components/SafeCard.tsx` for failure handling)
