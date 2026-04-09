@@ -5,6 +5,9 @@ export interface ChainConfig {
   paymasterUrl: string;
   chainName: string;
   explorerUrl: string;
+  usdt0Token: string;
+  usdt0Oft: string;
+  lzEid: number;
 }
 
 function loadChains(): ChainConfig[] {
@@ -25,6 +28,9 @@ function loadChains(): ChainConfig[] {
       paymasterUrl,
       chainName: (import.meta.env[`VITE_CHAIN${n}_NAME`] as string) ?? '',
       explorerUrl: (import.meta.env[`VITE_CHAIN${n}_EXPLORER_URL`] as string) ?? '',
+      usdt0Token: import.meta.env[`VITE_CHAIN${n}_USDT0_TOKEN`] as string,
+      usdt0Oft: import.meta.env[`VITE_CHAIN${n}_USDT0_OFT`] as string,
+      lzEid: Number(import.meta.env[`VITE_CHAIN${n}_LZ_EID`]),
     });
   }
 
