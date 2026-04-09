@@ -754,47 +754,62 @@
   border-bottom-color: var(--accent);
 }
 
+.cta-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.cta-prompt-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cta-prompt-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
 .cta-prompt-container {
   display: flex;
-  align-items: stretch;
-  gap: 0;
-  margin-bottom: 1.25rem;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  overflow: hidden;
   background: rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.cta-prompt-container:hover {
+  border-color: var(--accent);
 }
 
 .cta-prompt {
-  flex: 1;
   font-family: var(--font-mono);
-  font-size: 0.82rem;
-  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
   color: var(--accent);
-  text-align: left;
-  white-space: nowrap;
-  overflow-x: auto;
+  word-break: break-all;
   letter-spacing: 0.01em;
 }
 
-.cta-copy-button {
+.cta-copy-hint {
   flex-shrink: 0;
-  font-family: var(--font-mono);
-  font-size: 0.78rem;
-  font-weight: 500;
-  padding: 0.75rem 1rem;
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--text-secondary);
-  border: none;
-  border-left: 1px solid var(--border-default);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  min-width: 4.5rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  transition: color 0.15s;
 }
 
-.cta-copy-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: var(--text-primary);
+.cta-prompt-container:hover .cta-copy-hint {
+  color: var(--text-secondary);
 }
 
 /* ===== FAQ Section ===== */
