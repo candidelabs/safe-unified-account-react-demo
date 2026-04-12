@@ -3,7 +3,7 @@ import {
 	SafeMultiChainSigAccountV1 as SafeAccount,
 	MetaTransaction,
 	SocialRecoveryModule,
-	SocialRecoveryModuleGracePeriodSelector
+	SocialRecoveryModuleGracePeriodSelector,
 } from "abstractionkit";
 import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 
@@ -121,6 +121,7 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 					allTransactions[i],
 					chain.jsonRpcProvider,
 					chain.bundlerUrl,
+					{ expectedSigners: [passkey.pubkeyCoordinates] },
 				),
 			),
 		);
@@ -199,6 +200,9 @@ function SafeCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 						failedTxs[j],
 						chain.jsonRpcProvider,
 						chain.bundlerUrl,
+						{
+							expectedSigners: [passkey.pubkeyCoordinates],
+						},
 					),
 				),
 			);
