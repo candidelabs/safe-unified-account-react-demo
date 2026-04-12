@@ -91,7 +91,7 @@ const faqItems = [
 				>
 					Nethermind
 				</a>
-				. The SDK and protocol are functional on testnets and mainnets
+				. The SDK and smart contracts are functional on testnets and mainnets
 				today. If you're exploring this for production, we'd love to hear your
 				requirements.{" "}
 				<a href="https://cal.com/candidelabs/30mins" target="_blank" rel="noopener noreferrer">
