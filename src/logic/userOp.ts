@@ -4,13 +4,13 @@ import { Bytes, Hex } from 'ox'
 import {
   SafeMultiChainSigAccountV1 as SafeAccount,
   CandidePaymaster,
+  type CandidePaymasterContext,
+  type GasPaymasterUserOperationOverrides,
   SignerSignaturePair,
   WebauthnSignatureData,
   SendUseroperationResponse,
   UserOperationV9,
 } from 'abstractionkit'
-
-type PaymasterOverrides = NonNullable<Parameters<CandidePaymaster['createSponsorPaymasterUserOperation']>[4]>;
 
 import {
   PasskeyLocalStorageFormat
@@ -21,6 +21,9 @@ export interface MultiChainUserOpInput {
   chainId: bigint;
   bundlerUrl: string;
   paymasterUrl: string;
+  sponsorshipPolicyId?: string;
+  preVerificationGasMultiplier?: number;
+  verificationGasLimitMultiplier?: number;
 }
 
 export type MultiChainSendResult =
@@ -44,28 +47,40 @@ async function signAndSendMultiChainUserOps(
   passkey: PasskeyLocalStorageFormat,
   safeAccount: InstanceType<typeof SafeAccount>,
 ): Promise<MultiChainSendResult[]> {
-  // 1. Paymaster commit — gas estimation + paymaster fields
-  const commitOverrides: PaymasterOverrides = {
-    context: { signingPhase: "commit" as const },
-  };
-
+  // 1. Paymaster commit — gas estimation + paymaster fields.
+  // Matches the canonical abstractionkit-examples/chain-abstraction flow:
+  // the paymaster's defaults handle typical gas estimation; only supply
+  // per-chain multiplier overrides when explicitly configured via env.
   const commitResults = await Promise.all(
     ops.map((op) => {
       const paymaster = new CandidePaymaster(op.paymasterUrl);
+      const context: CandidePaymasterContext = { signingPhase: "commit" };
+      const overrides: GasPaymasterUserOperationOverrides = {
+        ...(op.preVerificationGasMultiplier !== undefined && {
+          preVerificationGasPercentageMultiplier: op.preVerificationGasMultiplier,
+        }),
+        ...(op.verificationGasLimitMultiplier !== undefined && {
+          verificationGasLimitPercentageMultiplier: op.verificationGasLimitMultiplier,
+        }),
+      };
       return paymaster.createSponsorPaymasterUserOperation(
-        safeAccount, op.userOp, op.bundlerUrl, undefined, commitOverrides,
+        safeAccount, op.userOp, op.bundlerUrl, op.sponsorshipPolicyId, context, overrides,
       );
     }),
   );
 
-  commitResults.forEach(([committedOp], i) => {
+  commitResults.forEach(({ userOperation: committedOp }, i) => {
     ops[i].userOp = committedOp;
   });
 
-  // 2. Build signing array and compute multichain Merkle root hash
+  // 2. Build signing array with per-op isInit. Chains can diverge (Safe
+  // deployed on one chain but not another), so each leg needs its own flag.
   const userOperationsToSign = ops.map((op) => ({
     userOperation: op.userOp,
     chainId: op.chainId,
+    overrides: {
+      isInit: op.userOp.nonce === 0n,
+    },
   }));
 
   const multiChainHash = SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(
@@ -102,37 +117,28 @@ async function signAndSendMultiChainUserOps(
     signature: webauthSignature,
   };
 
-  // 6. Format single signature into per-UserOperation signatures
-  const isInit = ops[0].userOp.nonce === 0n;
-
+  // 6. Format single signature into per-UserOperation signatures.
   const signatures = SafeAccount.formatSignaturesToUseroperationsSignatures(
     userOperationsToSign,
     [signerSignaturePair],
-    {
-      isInit,
-      safe4337ModuleAddress: SafeAccount.DEFAULT_SAFE_4337_MODULE_ADDRESS,
-    },
   );
 
   ops.forEach((op, i) => {
     op.userOp.signature = signatures[i];
   });
 
-  // 7. Paymaster finalize — seal paymaster data after signatures
-  const finalizeOverrides: PaymasterOverrides = {
-    context: { signingPhase: "finalize" as const },
-  };
-
+  // 7. Paymaster finalize — seal paymaster data after signatures are set.
   const finalizeResults = await Promise.all(
     ops.map((op) => {
       const paymaster = new CandidePaymaster(op.paymasterUrl);
+      const context: CandidePaymasterContext = { signingPhase: "finalize" };
       return paymaster.createSponsorPaymasterUserOperation(
-        safeAccount, op.userOp, op.bundlerUrl, undefined, finalizeOverrides,
+        safeAccount, op.userOp, op.bundlerUrl, op.sponsorshipPolicyId, context,
       );
     }),
   );
 
-  finalizeResults.forEach(([finalizedOp], i) => {
+  finalizeResults.forEach(({ userOperation: finalizedOp }, i) => {
     ops[i].userOp = finalizedOp;
   });
 
