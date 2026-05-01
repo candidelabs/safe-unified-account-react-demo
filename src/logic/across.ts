@@ -115,3 +115,32 @@ export async function quoteAcrossFee(args: {
     spokePoolAddress:   raw.spokePoolAddress as `0x${string}`,
   };
 }
+
+// ── Exact-out gross-up ──────────────────────────────────────────
+
+const ONE_E18 = 10n ** 18n;
+
+/**
+ * Given a target `outputAmount` the recipient should receive on the
+ * destination chain, compute the `inputAmount` to deposit on the source.
+ *
+ * Across charges totalRelayFee.pct + lpFee.pct of *input*, both in 1e18
+ * fixed point:  output = input × (1e18 − totalRelayFeePct − lpFeePct) / 1e18.
+ * Solving for input:  input = ceil(output × 1e18 / (1e18 − totalRelayFeePct − lpFeePct)).
+ *
+ * Adds a 1-wei cushion to absorb integer-division rounding inside the
+ * SpokePool's own fee math at execution.
+ */
+export function grossUpInputAmount(
+  outputTarget: bigint,
+  quote: SuggestedFeesQuote,
+): bigint {
+  const feePct = quote.totalRelayFeePct + quote.lpFeePct;
+  if (feePct >= ONE_E18) {
+    throw new Error('Across fees exceed 100% — leg unroutable');
+  }
+  const denom = ONE_E18 - feePct;
+  // ceilDiv(output × 1e18, denom)
+  const inputAmount = (outputTarget * ONE_E18 + denom - 1n) / denom;
+  return inputAmount + 1n;
+}
