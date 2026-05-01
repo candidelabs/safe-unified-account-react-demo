@@ -29,7 +29,7 @@ src/
 ├── hooks/
 │   └── useLocalStorageState.ts   # Generic localStorage-backed React state hook
 └── logic/
-    ├── chains.ts                 # Dynamic N-chain config loader from env vars
+    ├── chains.ts                 # Account chains + destination-only chains loader
     ├── passkeys.ts               # WebAuthn P-256 credential creation (ox library)
     ├── userOp.ts                 # Multichain UserOperation signing + submission
     ├── transfer.ts               # Balance reading, split computation, LayerZero bridging
@@ -43,7 +43,7 @@ React + Vite + TypeScript single-page app demonstrating **Safe Unified Account**
 **Key design decisions:**
 
 - **logic/ separated from components/** — all blockchain interaction is in `logic/`, UI components only call into it
-- **Dynamic N-chain configuration** — chains are loaded in a loop from numbered env vars (`VITE_CHAIN1_*`, `VITE_CHAIN2_*`, …); minimum 2 chains enforced at build time in `vite.config.ts`
+- **Two chain models** — `accountChains` (Safe operates: bundler/paymaster/OFT) loaded from `VITE_CHAIN{N}_*` (≥ 2 enforced); `destinationChains = accountChains ∪ destOnlyChains` from `VITE_DEST_CHAIN{N}_*` (optional, recipient-only). The Safe never runs userOps on destination-only chains; LayerZero delivers via the destination's OFT peer registration.
 - **Two-tab UI in AccountCard** — "Authorized Signers" (add/remove owners) and "Recovery Guardians" (social recovery module)
 - **Per-chain status tracking** — each chain gets independent status (preparing → signing → pending → success) with userOpHash, txHash, and error states
 
@@ -61,7 +61,12 @@ App.tsx
 
 ## Environment Variables
 
-Pattern: `VITE_CHAIN{N}_*` where N starts at 1 and increments.
+Two chain models — see `src/logic/chains.ts`:
+
+- **Account chain** (`VITE_CHAIN{N}_*`) — where the Safe operates: bundler, paymaster, OFT `send()` source. Minimum 2 required. Every account chain is also a valid destination.
+- **Destination-only chain** (`VITE_DEST_CHAIN{N}_*`) — recipient can receive USDT0 here via OFT delivery, but the Safe runs no userOps here. Optional; zero or more. Useful for "Safe holds on Arbitrum + Polygon, send to Ethereum mainnet".
+
+### Account chains: `VITE_CHAIN{N}_*`
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -69,13 +74,27 @@ Pattern: `VITE_CHAIN{N}_*` where N starts at 1 and increments.
 | `VITE_CHAIN{N}_BUNDLER_URL` | Yes | Bundler endpoint |
 | `VITE_CHAIN{N}_JSON_RPC_PROVIDER` | Yes | JSON-RPC provider URL |
 | `VITE_CHAIN{N}_PAYMASTER_URL` | Yes | Candide paymaster endpoint |
+| `VITE_CHAIN{N}_USDT0_TOKEN` | Yes | USDT0 token contract address |
+| `VITE_CHAIN{N}_USDT0_OFT` | Yes | USDT0 OFT (LayerZero) contract address |
+| `VITE_CHAIN{N}_LZ_EID` | Yes | LayerZero endpoint ID for cross-chain bridging |
+| `VITE_CHAIN{N}_SPONSORSHIP_POLICY_ID` | No | Candide gas sponsorship policy ID — passed as 4th arg to `createSponsorPaymasterUserOperation` |
+| `VITE_CHAIN{N}_PRE_VERIFICATION_GAS_MULTIPLIER` | No | Integer % bump on `preVerificationGas` (e.g. `100` = +100% / 2x). Set on rollups like Arbitrum where the paymaster's default +5% bump is too low after the WebAuthn signature inflates calldata |
+| `VITE_CHAIN{N}_VERIFICATION_GAS_LIMIT_MULTIPLIER` | No | Integer % bump on `verificationGasLimit` (e.g. `50` = +50% / 1.5x). Set on chains where the paymaster's default +10% bump is too low for WebAuthn P-256 signature verification (AA26 errors) |
 | `VITE_CHAIN{N}_NAME` | No | Human-readable name for UI |
 | `VITE_CHAIN{N}_EXPLORER_URL` | No | Block explorer base URL |
-| `VITE_CHAIN{N}_USDT0_TOKEN` | No | USDT0 token contract address |
-| `VITE_CHAIN{N}_USDT0_OFT` | No | USDT0 OFT (LayerZero) contract address |
-| `VITE_CHAIN{N}_LZ_EID` | No | LayerZero endpoint ID for cross-chain bridging |
 
-Validation in `vite.config.ts` loops through chains and throws if any required var is missing or fewer than 2 chains are configured. Default setup targets Ethereum Sepolia + Optimism Sepolia with public Candide bundler endpoints.
+### Destination-only chains: `VITE_DEST_CHAIN{N}_*`
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `VITE_DEST_CHAIN{N}_ID` | Yes | Blockchain chain ID |
+| `VITE_DEST_CHAIN{N}_NAME` | Yes | Human-readable name for UI |
+| `VITE_DEST_CHAIN{N}_JSON_RPC_PROVIDER` | Yes | JSON-RPC provider URL — used for recipient balance reads + LZ delivery polling |
+| `VITE_DEST_CHAIN{N}_EXPLORER_URL` | Yes | Block explorer base URL |
+| `VITE_DEST_CHAIN{N}_USDT0_TOKEN` | Yes | USDT0 token contract address (for recipient balance reads) |
+| `VITE_DEST_CHAIN{N}_LZ_EID` | Yes | LayerZero endpoint ID — destination of the OFT message |
+
+`vite.config.ts` validates required fields and enforces ≥ 2 account chains. Default setup targets Ethereum Sepolia + Optimism Sepolia with public Candide bundler endpoints.
 
 ## Key SDK Patterns
 
@@ -167,7 +186,7 @@ const [finalizedOp] = await paymaster.createSponsorPaymasterUserOperation(
 | File | Key export / responsibility |
 |------|---------------------------|
 | `src/logic/userOp.ts` | `signAndSendMultiChainUserOps()` — core multichain signing orchestrator |
-| `src/logic/chains.ts` | `chains: ChainConfig[]` — dynamic chain config from env vars |
+| `src/logic/chains.ts` | `accountChains: AccountChainConfig[]` (Safe operates) + `destinationChains: DestinationChainConfig[]` (Safe operates ∪ destination-only) |
 | `src/logic/passkeys.ts` | `createPasskey()`, `toLocalStorageFormat()` — WebAuthn credential management |
 | `src/logic/storage.ts` | `setItem()`, `getItem()` — localStorage with bigint→hex serialization |
 | `src/logic/transfer.ts` | Balance reading, split computation, LayerZero bridging logic |

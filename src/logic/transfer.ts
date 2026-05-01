@@ -1,6 +1,6 @@
 import { encodeFunctionData, encodePacked, createPublicClient, http, parseAbi, pad, type Hex } from 'viem';
 import type { MetaTransaction } from 'abstractionkit';
-import type { ChainConfig } from './chains';
+import type { AccountChainConfig, DestinationChainConfig } from './chains';
 
 // ── ABI fragments ──────────────────────────────────────────────
 
@@ -18,14 +18,14 @@ export const OFT_ABI = parseAbi([
 // ── Types ──────────────────────────────────────────────────────
 
 export interface TransferIntent {
-  totalAmount: bigint;         // in USDT0 local decimals (6)
+  totalAmount: bigint;                  // in USDT0 local decimals (6)
   recipient: `0x${string}`;
-  destinationChainIndex: number;
+  destination: DestinationChainConfig;  // any chain USDT0 OFT can deliver to
 }
 
 export interface ChainContribution {
-  chainIndex: number;
-  amount: bigint;              // amount this chain contributes
+  chainIndex: number;                   // index into accountChains
+  amount: bigint;
   type: 'local-transfer' | 'bridge';
 }
 
@@ -49,9 +49,11 @@ export function encodeLzReceiveOption(gasLimit: bigint = LZ_RECEIVE_GAS_LIMIT): 
 
 /**
  * Read USDT0 balance for an address on a single chain via JSON-RPC.
+ * Works for both account chains and destination-only chains (both expose
+ * `usdt0Token` + `jsonRpcProvider`).
  */
 export async function readBalance(
-  chain: ChainConfig,
+  chain: DestinationChainConfig,
   address: `0x${string}`,
 ): Promise<bigint> {
   const client = createPublicClient({ transport: http(chain.jsonRpcProvider) });
@@ -65,22 +67,23 @@ export async function readBalance(
 }
 
 /**
- * Read USDT0 balances across all chains in parallel.
- * Returns an array of bigints aligned with the chains array.
+ * Read USDT0 balances for the Safe on each account chain in parallel.
+ * Aligned with the `accountChains` array — destination-only chains aren't
+ * included since the Safe has no balance there.
  */
 export async function readAllBalances(
-  chains: ChainConfig[],
+  chains: AccountChainConfig[],
   address: `0x${string}`,
 ): Promise<bigint[]> {
   return Promise.all(chains.map((chain) => readBalance(chain, address)));
 }
 
 /**
- * Read native token balance (ETH/XPL) for an address on a single chain.
- * Used to verify the Safe can pay LayerZero messaging fees.
+ * Read native token balance for an address on a single chain.
+ * Used to verify the Safe can pay LayerZero messaging fees on source chains.
  */
 export async function readNativeBalance(
-  chain: ChainConfig,
+  chain: DestinationChainConfig,
   address: `0x${string}`,
 ): Promise<bigint> {
   const client = createPublicClient({ transport: http(chain.jsonRpcProvider) });
@@ -90,33 +93,46 @@ export async function readNativeBalance(
 // ── Transfer split computation ─────────────────────────────────
 
 /**
- * Compute how much each chain contributes to the transfer.
- * Destination chain contributes first (local transfer), remainder bridges.
- * Returns only chains that contribute (amount > 0).
+ * Compute how much each account chain contributes to the transfer.
+ *
+ * - If the destination is also an account chain (matched by chainId), that
+ *   chain contributes first via a local ERC-20 transfer; the remainder
+ *   bridges from the other account chains.
+ * - If the destination is destination-only, every contribution bridges.
+ *
+ * `balances` must be aligned with `accountChains`. Returns only chains that
+ * contribute (amount > 0). Throws if the unified balance is insufficient.
  */
 export function computeTransferSplit(
+  accountChains: AccountChainConfig[],
   balances: bigint[],
   intent: TransferIntent,
 ): ChainContribution[] {
-  const { totalAmount, destinationChainIndex } = intent;
+  const { totalAmount, destination } = intent;
   const contributions: ChainContribution[] = [];
   let remaining = totalAmount;
 
-  // Destination chain contributes first (local transfer)
-  const destBalance = balances[destinationChainIndex];
-  const destContribution = destBalance < remaining ? destBalance : remaining;
-  if (destContribution > 0n) {
-    contributions.push({
-      chainIndex: destinationChainIndex,
-      amount: destContribution,
-      type: 'local-transfer',
-    });
-    remaining -= destContribution;
+  const localIndex = accountChains.findIndex(
+    (c) => c.chainId === destination.chainId,
+  );
+
+  // If destination is an account chain, consume its balance locally first
+  if (localIndex >= 0) {
+    const destBalance = balances[localIndex];
+    const destContribution = destBalance < remaining ? destBalance : remaining;
+    if (destContribution > 0n) {
+      contributions.push({
+        chainIndex: localIndex,
+        amount: destContribution,
+        type: 'local-transfer',
+      });
+      remaining -= destContribution;
+    }
   }
 
-  // Other chains bridge the remainder
+  // Bridge the rest from any remaining account chains
   for (let i = 0; i < balances.length && remaining > 0n; i++) {
-    if (i === destinationChainIndex) continue;
+    if (i === localIndex) continue;
     const available = balances[i];
     const contribution = available < remaining ? available : remaining;
     if (contribution > 0n) {
@@ -136,11 +152,39 @@ export function computeTransferSplit(
   return contributions;
 }
 
+/**
+ * Poll a recipient's USDT0 balance on the destination chain until it reaches
+ * `expectedAtLeast`, or until `timeoutMs` elapses. Returns the final balance
+ * observed (the caller decides whether to treat a sub-expected return as a
+ * timeout). Used to confirm LayerZero bridge delivery after source-chain
+ * userOp inclusion.
+ */
+export async function waitForDestinationBalance(
+  destChain: DestinationChainConfig,
+  recipient: `0x${string}`,
+  expectedAtLeast: bigint,
+  timeoutMs: number = 5 * 60 * 1000,
+  pollIntervalMs: number = 5000,
+): Promise<bigint> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const balance = await readBalance(destChain, recipient);
+    if (balance >= expectedAtLeast) return balance;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+  return await readBalance(destChain, recipient);
+}
+
 // ── Fee quoting ────────────────────────────────────────────────
 
+/**
+ * Quote the LayerZero native messaging fee on the source chain. The
+ * destination only contributes its `lzEid` — the source OFT looks up the
+ * peer address on-chain via its own peer registry.
+ */
 export async function quoteBridgeFee(
-  sourceChain: ChainConfig,
-  destinationChain: ChainConfig,
+  sourceChain: AccountChainConfig,
+  destinationChain: DestinationChainConfig,
   recipient: `0x${string}`,
   amount: bigint,
 ): Promise<bigint> {
@@ -169,12 +213,12 @@ export async function quoteBridgeFee(
 // ── MetaTransaction building ───────────────────────────────────
 
 export interface TransferPlan {
-  chainIndex: number;
+  chainIndex: number;                  // index into accountChains
   transactions: MetaTransaction[];
 }
 
 export async function buildTransferMetaTransactions(
-  chains: ChainConfig[],
+  accountChains: AccountChainConfig[],
   contributions: ChainContribution[],
   intent: TransferIntent,
   safeAddress: `0x${string}`,
@@ -182,7 +226,7 @@ export async function buildTransferMetaTransactions(
   const plans: TransferPlan[] = [];
 
   for (const contrib of contributions) {
-    const chain = chains[contrib.chainIndex];
+    const chain = accountChains[contrib.chainIndex];
 
     if (contrib.type === 'local-transfer') {
       const transferData = encodeFunctionData({
@@ -200,8 +244,12 @@ export async function buildTransferMetaTransactions(
         }],
       });
     } else {
-      const destChain = chains[intent.destinationChainIndex];
-      const nativeFee = await quoteBridgeFee(chain, destChain, intent.recipient, contrib.amount);
+      const nativeFee = await quoteBridgeFee(
+        chain,
+        intent.destination,
+        intent.recipient,
+        contrib.amount,
+      );
 
       const approveData = encodeFunctionData({
         abi: ERC20_ABI,
@@ -210,7 +258,7 @@ export async function buildTransferMetaTransactions(
       });
 
       const sendParam = {
-        dstEid: destChain.lzEid,
+        dstEid: intent.destination.lzEid,
         to: pad(intent.recipient, { size: 32 }),
         amountLD: contrib.amount,
         minAmountLD: contrib.amount,

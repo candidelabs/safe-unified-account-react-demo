@@ -7,7 +7,7 @@ import {
 } from "./logic/passkeys.ts";
 import "./App.css";
 import { useLocalStorageState } from "./hooks/useLocalStorageState.ts";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { PasskeyCard } from "./components/PasskeyCard.tsx";
 import { TransferCard } from "./components/TransferCard.tsx";
 import { AccountCard } from "./components/AccountCard.tsx";
@@ -22,6 +22,7 @@ function App() {
 		PasskeyLocalStorageFormat | undefined
 	>(PASSKEY_LOCALSTORAGE_KEY, undefined);
 	const [error, setError] = useState<string>();
+	const [view, setView] = useState<"main" | "settings">("main");
 
 	const handleCreatePasskeyClick = async () => {
 		setError(undefined);
@@ -38,6 +39,16 @@ function App() {
 		}
 	};
 
+	// In settings view: Escape returns to main view
+	useEffect(() => {
+		if (view !== "settings") return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") setView("main");
+		};
+		document.addEventListener("keydown", onKey);
+		return () => document.removeEventListener("keydown", onKey);
+	}, [view]);
+
 	return (
 		<>
 			<header className="header">
@@ -52,19 +63,39 @@ function App() {
 				<span className="demo-badge">Live Demo</span>
 				<h1>Safe Unified Account</h1>
 				<p className="subtitle">
-					A single USDT0 balance across Arbitrum, Plasma, and more.
+					A single USDT balance across Arbitrum, Optimism, and more.
 					<br />
 					One passkey. One signature. Transfer across every chain.
 				</p>
 			</div>
 
-			<PasskeyCard
-				passkey={passkey}
-				handleCreatePasskeyClick={handleCreatePasskeyClick}
-			/>
+			{(!passkey || view === "main") && (
+				<div className="view-main" key="view-main">
+					<PasskeyCard
+						passkey={passkey}
+						handleCreatePasskeyClick={handleCreatePasskeyClick}
+						onOpenSettings={passkey ? () => setView("settings") : undefined}
+						settingsActive={false}
+					/>
+					{passkey && <TransferCard passkey={passkey} />}
+				</div>
+			)}
 
-			{passkey && <TransferCard passkey={passkey} />}
-			{passkey && <AccountCard passkey={passkey} />}
+			{passkey && view === "settings" && (
+				<div className="view-settings" key="view-settings">
+					<PasskeyCard
+						passkey={passkey}
+						handleCreatePasskeyClick={handleCreatePasskeyClick}
+						onOpenSettings={() => setView("main")}
+						settingsActive={true}
+					/>
+					<h2 className="view-settings-title">Account Security</h2>
+					<p className="view-settings-subtitle">
+						Manage authorized signers and recovery guardians across every chain — in a single signature.
+					</p>
+					<AccountCard passkey={passkey} />
+				</div>
+			)}
 
 			{error && (
 				<div className="card">

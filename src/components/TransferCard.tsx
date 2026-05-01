@@ -6,18 +6,21 @@ import {
 import type { PasskeyLocalStorageFormat } from '../logic/passkeys';
 import { signAndSendMultiChainUserOps } from '../logic/userOp';
 import { getItem } from '../logic/storage';
-import { chains } from '../logic/chains';
+import { accountChains, destinationChains } from '../logic/chains';
+import { ChainIcon } from './ChainIcon';
 import {
   readAllBalances,
+  readBalance,
   readNativeBalance,
   computeTransferSplit,
   buildTransferMetaTransactions,
   quoteBridgeFee,
+  waitForDestinationBalance,
   type ChainContribution,
   type TransferIntent,
 } from '../logic/transfer';
 
-type Step = 'idle' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'success';
+type Step = 'idle' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'delivering' | 'success';
 
 interface ChainResult {
   chainIndex: number;
@@ -25,6 +28,9 @@ interface ChainResult {
   txHash?: string;
   error?: string;
   type: 'local-transfer' | 'bridge';
+  // Bridge legs only: source is confirmed but LZ delivery to destination is still pending.
+  delivering?: boolean;
+  delivered?: boolean;
 }
 
 const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
@@ -47,7 +53,9 @@ function parseUsdt(input: string): bigint | null {
 }
 
 function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
-  const [balances, setBalances] = useState<bigint[]>(() => chains.map(() => 0n));
+  // `balances` is aligned with `accountChains` — destination-only chains have no Safe balance.
+  // `destChainIndex` indexes into `destinationChains` (account chains + destination-only chains).
+  const [balances, setBalances] = useState<bigint[]>(() => accountChains.map(() => 0n));
   const [recipient, setRecipient] = useState('');
   const [amountInput, setAmountInput] = useState('');
   const [destChainIndex, setDestChainIndex] = useState(0);
@@ -60,12 +68,13 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const accountAddress = getItem('accountAddress') as `0x${string}`;
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
   const parsedAmount = parseUsdt(amountInput);
+  const destination = destinationChains[destChainIndex];
 
   const fetchBalances = useCallback(async () => {
     if (!accountAddress) return;
     setLoadingBalances(true);
     try {
-      const result = await readAllBalances(chains, accountAddress);
+      const result = await readAllBalances(accountChains, accountAddress);
       setBalances(result);
     } catch (err) {
       console.error('Failed to fetch balances:', err);
@@ -90,9 +99,9 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       const intent: TransferIntent = {
         totalAmount: parsedAmount,
         recipient: recipient.trim() as `0x${string}`,
-        destinationChainIndex: destChainIndex,
+        destination,
       };
-      const split = computeTransferSplit(balances, intent);
+      const split = computeTransferSplit(accountChains, balances, intent);
       setContributions(split);
       setStep('confirm');
     } catch (err) {
@@ -110,7 +119,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       const intent: TransferIntent = {
         totalAmount: parsedAmount,
         recipient: recipient.trim() as `0x${string}`,
-        destinationChainIndex: destChainIndex,
+        destination,
       };
 
       const safeAccount = SafeAccount.initializeNewAccount([
@@ -120,12 +129,11 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       // Pre-flight: check native balance for bridge fees on source chains
       const bridgeContribs = contributions.filter((c) => c.type === 'bridge');
       if (bridgeContribs.length > 0) {
-        const destChain = chains[intent.destinationChainIndex];
         for (const contrib of bridgeContribs) {
-          const srcChain = chains[contrib.chainIndex];
+          const srcChain = accountChains[contrib.chainIndex];
           const [nativeBalance, requiredFee] = await Promise.all([
             readNativeBalance(srcChain, accountAddress),
-            quoteBridgeFee(srcChain, destChain, intent.recipient, contrib.amount),
+            quoteBridgeFee(srcChain, intent.destination, intent.recipient, contrib.amount),
           ]);
           if (nativeBalance < requiredFee) {
             throw new Error(
@@ -136,21 +144,31 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         }
       }
 
+      // Snapshot recipient's destination balance so we can detect LZ delivery
+      // by waiting for the balance to grow by the full intended total.
+      const recipientStartBalance = bridgeContribs.length > 0
+        ? await readBalance(intent.destination, intent.recipient)
+        : 0n;
+
       const plans = await buildTransferMetaTransactions(
-        chains,
+        accountChains,
         contributions,
         intent,
         accountAddress,
       );
 
-      // Create UserOperations for participating chains only
+      // Create UserOperations for participating chains only.
+      // `expectedSigners` lets the SDK generate a WebAuthn-shaped dummy
+      // signature for gas estimation so the bundler's estimate matches what
+      // the real signature will consume at execution.
       const userOps = await Promise.all(
         plans.map((plan) => {
-          const chain = chains[plan.chainIndex];
+          const chain = accountChains[plan.chainIndex];
           return safeAccount.createUserOperation(
             plan.transactions,
             chain.jsonRpcProvider,
             chain.bundlerUrl,
+            { expectedSigners: [passkey.pubkeyCoordinates] },
           );
         }),
       );
@@ -161,9 +179,12 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       const results = await signAndSendMultiChainUserOps(
         plans.map((plan, i) => ({
           userOp: userOps[i],
-          chainId: chains[plan.chainIndex].chainId,
-          bundlerUrl: chains[plan.chainIndex].bundlerUrl,
-          paymasterUrl: chains[plan.chainIndex].paymasterUrl,
+          chainId: accountChains[plan.chainIndex].chainId,
+          bundlerUrl: accountChains[plan.chainIndex].bundlerUrl,
+          paymasterUrl: accountChains[plan.chainIndex].paymasterUrl,
+          sponsorshipPolicyId: accountChains[plan.chainIndex].sponsorshipPolicyId,
+          preVerificationGasMultiplier: accountChains[plan.chainIndex].preVerificationGasMultiplier,
+          verificationGasLimitMultiplier: accountChains[plan.chainIndex].verificationGasLimitMultiplier,
         })),
         passkey,
         safeAccount,
@@ -201,6 +222,42 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       });
 
       await Promise.all(promises);
+
+      // For bridge legs, source-chain inclusion only confirms the LayerZero
+      // message was dispatched — not delivered. Poll the destination chain's
+      // recipient balance to confirm delivery before declaring success.
+      if (bridgeContribs.length > 0) {
+        setStep('delivering');
+        setChainResults((prev) =>
+          prev.map((r) =>
+            r.type === 'bridge' && r.txHash ? { ...r, delivering: true } : r,
+          ),
+        );
+
+        const expectedBalance = recipientStartBalance + intent.totalAmount;
+        const finalBalance = await waitForDestinationBalance(
+          intent.destination,
+          intent.recipient,
+          expectedBalance,
+        );
+        const delivered = finalBalance >= expectedBalance;
+
+        setChainResults((prev) =>
+          prev.map((r) =>
+            r.type === 'bridge' && r.txHash
+              ? { ...r, delivering: false, delivered }
+              : r,
+          ),
+        );
+
+        if (!delivered) {
+          setError(
+            `Source transactions confirmed, but destination delivery did not arrive within 5 minutes. ` +
+            `LayerZero may still deliver — check ${intent.destination.chainName} later.`,
+          );
+        }
+      }
+
       setStep('success');
       await fetchBalances();
     } catch (err) {
@@ -223,13 +280,14 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
     <div className="card action-card">
       {(step === 'idle' || step === 'confirm') && (
         <div className="unified-balance">
-          <div className="balance-label">Unified USDT0 Balance</div>
+          <div className="balance-label">Unified USDT Balance</div>
           <div className="balance-amount">
             {loadingBalances ? '...' : formatUsdt(unifiedBalance)}
           </div>
           <div className="balance-breakdown">
-            {chains.map((chain, i) => (
+            {accountChains.map((chain, i) => (
               <span key={i} className="chain-balance">
+                <ChainIcon chainId={chain.chainId} />
                 {chain.chainName}: {formatUsdt(balances[i])}
               </span>
             ))}
@@ -252,21 +310,22 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             {isSelfTransfer && <span className="field-error">Cannot send to your own address</span>}
           </div>
           <div className="form-field">
-            <label className="form-label">Amount (USDT0)</label>
+            <label className="form-label">Amount (USDT)</label>
             <input type="text" className="address-input" placeholder="0.00" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
           </div>
           <div className="form-field">
             <label className="form-label">Destination Chain</label>
             <div className="chain-selector">
-              {chains.map((chain, i) => (
+              {destinationChains.map((chain, i) => (
                 <button key={i} className={`chain-option ${destChainIndex === i ? 'chain-option-active' : ''}`} onClick={() => setDestChainIndex(i)}>
+                  <ChainIcon chainId={chain.chainId} />
                   {chain.chainName}
                 </button>
               ))}
             </div>
           </div>
           <button className="primary-button" onClick={handleSend} disabled={!canSend}>
-            Send {parsedAmount && isAmountValid ? `${formatUsdt(parsedAmount)} USDT0` : 'USDT0'}
+            Send {parsedAmount && isAmountValid ? `${formatUsdt(parsedAmount)} USDT` : 'USDT'}
           </button>
         </div>
       )}
@@ -275,18 +334,21 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         <div className="confirm-breakdown">
           <h3>Transaction Breakdown</h3>
           <p className="confirm-summary">
-            Sending {formatUsdt(parsedAmount!)} USDT0 to{' '}
+            Sending {formatUsdt(parsedAmount!)} USDT to{' '}
             <code>{recipient.slice(0, 8)}...{recipient.slice(-6)}</code> on{' '}
-            {chains[destChainIndex].chainName}
+            {destination.chainName}
           </p>
           <div className="confirm-steps">
             {contributions.map((contrib, i) => (
               <div key={i} className="confirm-step">
-                <span className="confirm-chain">{chains[contrib.chainIndex].chainName}</span>
+                <span className="confirm-chain">
+                  <ChainIcon chainId={accountChains[contrib.chainIndex].chainId} />
+                  {accountChains[contrib.chainIndex].chainName}
+                </span>
                 <span className="confirm-action">
                   {contrib.type === 'local-transfer'
-                    ? `Transfer ${formatUsdt(contrib.amount)} USDT0`
-                    : `Bridge ${formatUsdt(contrib.amount)} USDT0 → ${chains[destChainIndex].chainName}`}
+                    ? `Transfer ${formatUsdt(contrib.amount)} USDT`
+                    : `Bridge ${formatUsdt(contrib.amount)} USDT → ${destination.chainName}`}
                 </span>
               </div>
             ))}
@@ -303,38 +365,68 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       {step === 'preparing' && <p className="step-label">Preparing multichain operations…</p>}
       {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
+      {step === 'delivering' && <p className="step-label">Source confirmed — waiting on LayerZero delivery to destination…</p>}
 
-      {(step === 'pending' || step === 'success') && (
+      {(step === 'pending' || step === 'delivering' || step === 'success') && (
         <>
-          {step === 'success' && (
-            <div className="success-banner">
-              <p>Sent {formatUsdt(parsedAmount!)} USDT0 across {chainResults.length} chain{chainResults.length > 1 ? 's' : ''} with a single signature</p>
-            </div>
-          )}
+          {step === 'success' && (() => {
+            // Honest status: a leg counts as fully done only if it executed AND
+            // (for bridges) the destination saw the funds arrive.
+            const hasFailure = chainResults.some((r) => !!r.error);
+            const hasUndeliveredBridge = chainResults.some(
+              (r) => r.type === 'bridge' && !!r.txHash && r.delivered === false,
+            );
+            const chainCountLabel = `${chainResults.length} chain${chainResults.length > 1 ? 's' : ''}`;
+            const bannerClass = hasFailure ? 'success-banner failure-banner' : 'success-banner';
+            let message: string;
+            if (hasFailure) {
+              message = `Some operations failed across ${chainCountLabel} — see per-chain status below.`;
+            } else if (hasUndeliveredBridge) {
+              message = `Source transactions confirmed across ${chainCountLabel} with a single signature. Bridge delivery still in progress.`;
+            } else {
+              message = `Sent ${formatUsdt(parsedAmount!)} USDT across ${chainCountLabel} with a single signature`;
+            }
+            return (
+              <div className={bannerClass}>
+                <p>{message}</p>
+              </div>
+            );
+          })()}
           <div className="chain-results">
             {chainResults.map((result, i) => {
-              const chain = chains[result.chainIndex];
+              const chain = accountChains[result.chainIndex];
               const isPending = result.userOpHash && !result.txHash && !result.error;
-              const isSuccess = !!result.txHash;
               const isError = !!result.error;
+              const isBridge = result.type === 'bridge';
+              const isDelivering = isBridge && result.delivering;
+              const isDelivered = isBridge && result.delivered;
+              const isSourceConfirmedOnly = isBridge && !!result.txHash && !result.delivering && !result.delivered;
+              const isLocalConfirmed = !isBridge && !!result.txHash;
               let statusClass = '';
-              if (isPending) statusClass = 'pending';
-              else if (isSuccess) statusClass = 'success';
+              if (isPending || isDelivering) statusClass = 'pending';
+              else if (isLocalConfirmed || isDelivered) statusClass = 'success';
               else if (isError) statusClass = 'error';
+              else if (isSourceConfirmedOnly) statusClass = 'pending';
               return (
                 <div key={i} className="chain-status-card">
-                  <strong>{chain.chainName}</strong>
+                  <strong>
+                    <ChainIcon chainId={chain.chainId} />
+                    {chain.chainName}
+                  </strong>
                   <span className="chain-action-type">{result.type === 'local-transfer' ? 'Transfer' : 'Bridge'}</span>
                   <div className="chain-status-row">
                     <span className={`status-dot ${statusClass}`} />
                     <span>
                       {isPending && 'Pending...'}
-                      {isSuccess && 'Confirmed'}
+                      {isLocalConfirmed && 'Confirmed'}
+                      {isDelivering && 'Bridging to destination…'}
+                      {isDelivered && 'Delivered'}
+                      {isSourceConfirmedOnly && 'Source confirmed — delivery pending'}
                       {isError && result.error}
                     </span>
                   </div>
-                  {isSuccess && result.txHash && (
-                    <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View transaction ↗</a>
+                  {!!result.txHash && (
+                    <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View source transaction ↗</a>
                   )}
                 </div>
               );

@@ -10,7 +10,8 @@ import { generatePrivateKey, privateKeyToAddress } from "viem/accounts";
 import { PasskeyLocalStorageFormat } from "../logic/passkeys";
 import { signAndSendMultiChainUserOps } from "../logic/userOp";
 import { getItem } from "../logic/storage";
-import { chains } from "../logic/chains";
+import { accountChains as chains } from "../logic/chains";
+import { ChainIcon } from "./ChainIcon";
 
 type Step = "idle" | "preparing" | "signing" | "pending" | "success";
 type Tab = "signers" | "guardians";
@@ -29,10 +30,36 @@ interface ActionSummary {
 
 const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
 
+// Compute the union of address arrays from each chain (case-insensitive),
+// preserving the first canonical-cased version we saw.
+function unionAddresses(perChain: string[][]): string[] {
+	const seen = new Map<string, string>();
+	for (const list of perChain) {
+		for (const addr of list) {
+			const key = addr.toLowerCase();
+			if (!seen.has(key)) seen.set(key, addr);
+		}
+	}
+	return Array.from(seen.values());
+}
+
+// For a given address, return a boolean[] aligned with chains indicating
+// whether that address is present on each chain.
+function presenceVector(perChain: string[][], addr: string): boolean[] {
+	const target = addr.toLowerCase();
+	return perChain.map((list) => list.some((a) => a.toLowerCase() === target));
+}
+
 function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
-	const [owners, setOwners] = useState<string[]>([]);
-	const [guardians, setGuardians] = useState<string[]>([]);
-	const [moduleEnabled, setModuleEnabled] = useState(false);
+	const [ownersPerChain, setOwnersPerChain] = useState<string[][]>(
+		() => chains.map(() => []),
+	);
+	const [guardiansPerChain, setGuardiansPerChain] = useState<string[][]>(
+		() => chains.map(() => []),
+	);
+	const [moduleEnabledPerChain, setModuleEnabledPerChain] = useState<boolean[]>(
+		() => chains.map(() => false),
+	);
 	const [chainResults, setChainResults] = useState<ChainResult[]>(
 		() => chains.map(() => ({})),
 	);
@@ -58,40 +85,47 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
 	const socialRecoveryModule = useMemo(() => new SocialRecoveryModule(SocialRecoveryModuleGracePeriodSelector.After3Minutes), []);
 
+	// Read owners from EVERY chain in parallel — chains can drift apart if a
+	// past multichain operation succeeded on some chains and failed on others.
 	const fetchOwners = useCallback(async () => {
 		if (!accountAddress) return;
-		try {
-			const safeAccount = new SafeAccount(accountAddress);
-			const result = await safeAccount.getOwners(chains[0].jsonRpcProvider);
-			setOwners(result);
-		} catch {
-			// Safe not deployed yet
-		}
+		const safeAccount = new SafeAccount(accountAddress);
+		const results = await Promise.all(
+			chains.map(async (chain) => {
+				try {
+					return await safeAccount.getOwners(chain.jsonRpcProvider);
+				} catch {
+					// Safe not deployed on this chain yet — treat as empty
+					return [] as string[];
+				}
+			}),
+		);
+		setOwnersPerChain(results);
 	}, [accountAddress]);
 
 	const fetchGuardians = useCallback(async () => {
 		if (!accountAddress) return;
-		try {
-			const safeAccount = new SafeAccount(accountAddress);
-			const enabled = await safeAccount.isModuleEnabled(
-				chains[0].jsonRpcProvider,
-				socialRecoveryModule.moduleAddress,
-			);
-			setModuleEnabled(enabled);
-
-			if (enabled) {
-				const result = await socialRecoveryModule.getGuardians(
-					chains[0].jsonRpcProvider,
-					accountAddress,
-				);
-				setGuardians(result);
-			} else {
-				setGuardians([]);
-			}
-		} catch {
-			setModuleEnabled(false);
-			setGuardians([]);
-		}
+		const safeAccount = new SafeAccount(accountAddress);
+		const results = await Promise.all(
+			chains.map(async (chain) => {
+				try {
+					const enabled = await safeAccount.isModuleEnabled(
+						chain.jsonRpcProvider,
+						socialRecoveryModule.moduleAddress,
+					);
+					if (!enabled) return { enabled: false, list: [] as string[] };
+					const list = await socialRecoveryModule.getGuardians(
+						chain.jsonRpcProvider,
+						accountAddress,
+					);
+					return { enabled: true, list };
+				} catch {
+					return { enabled: false, list: [] as string[] };
+				}
+			}),
+		);
+		setModuleEnabledPerChain(results.map((r) => r.enabled));
+		setGuardiansPerChain(results.map((r) => r.list));
 	}, [accountAddress, socialRecoveryModule]);
 
 	useEffect(() => {
@@ -99,10 +133,18 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		fetchGuardians();
 	}, [fetchOwners, fetchGuardians]);
 
+	// Run a multichain op against a SUBSET of chains (defaults to all). The
+	// `buildTxs` callback receives only the targeted chain indices and must
+	// return one MetaTransaction[] per *targeted* chain (in the same order).
+	// chainResults stays aligned with the full chains array — non-targeted
+	// chains keep an empty {} result.
 	const executeMultiChainOp = async (
 		buildTxs: (
 			safeAccount: InstanceType<typeof SafeAccount>,
+			targetedChains: typeof chains,
+			targetedIndices: number[],
 		) => Promise<MetaTransaction[][]>,
+		chainIndices: number[] = chains.map((_, i) => i),
 	) => {
 		setStep("preparing");
 		setError(undefined);
@@ -112,15 +154,21 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 			passkey.pubkeyCoordinates,
 		]);
 
-		const allTransactions = await buildTxs(safeAccount);
+		const targetedChains = chainIndices.map((i) => chains[i]);
+		const targetedTransactions = await buildTxs(safeAccount, targetedChains, chainIndices);
+
+		// Mirror targeted txs into a full per-chain array for retry support
+		const allTransactions: MetaTransaction[][] = chains.map(() => []);
+		chainIndices.forEach((i, j) => { allTransactions[i] = targetedTransactions[j]; });
 		lastTransactionsRef.current = allTransactions;
 
 		const userOps = await Promise.all(
-			chains.map((chain, i) =>
+			targetedChains.map((chain, j) =>
 				safeAccount.createUserOperation(
-					allTransactions[i],
+					targetedTransactions[j],
 					chain.jsonRpcProvider,
 					chain.bundlerUrl,
+					{ expectedSigners: [passkey.pubkeyCoordinates] },
 				),
 			),
 		);
@@ -128,27 +176,34 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		setStep("signing");
 
 		const results = await signAndSendMultiChainUserOps(
-			chains.map((chain, i) => ({
-				userOp: userOps[i],
+			targetedChains.map((chain, j) => ({
+				userOp: userOps[j],
 				chainId: chain.chainId,
 				bundlerUrl: chain.bundlerUrl,
 				paymasterUrl: chain.paymasterUrl,
+				sponsorshipPolicyId: chain.sponsorshipPolicyId,
+				preVerificationGasMultiplier: chain.preVerificationGasMultiplier,
+				verificationGasLimitMultiplier: chain.verificationGasLimitMultiplier,
 			})),
 			passkey,
 			safeAccount,
 		);
 
 		setStep("pending");
-		setChainResults(
-			results.map((r) =>
-				r.status === "sent"
+		setChainResults((prev) => {
+			const next = [...prev];
+			results.forEach((r, j) => {
+				const i = chainIndices[j];
+				next[i] = r.status === "sent"
 					? { userOpHash: r.response.userOperationHash }
-					: { error: r.error },
-			),
-		);
+					: { error: r.error };
+			});
+			return next;
+		});
 
-		const inclusionPromises = results.map((r, i) => {
+		const inclusionPromises = results.map((r, j) => {
 			if (r.status !== "sent") return Promise.resolve();
+			const i = chainIndices[j];
 			return r.response.included().then((receipt) => {
 				setChainResults((prev) => {
 					const next = [...prev];
@@ -199,6 +254,7 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 						failedTxs[j],
 						chain.jsonRpcProvider,
 						chain.bundlerUrl,
+						{ expectedSigners: [passkey.pubkeyCoordinates] },
 					),
 				),
 			);
@@ -210,6 +266,9 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 					chainId: chain.chainId,
 					bundlerUrl: chain.bundlerUrl,
 					paymasterUrl: chain.paymasterUrl,
+					sponsorshipPolicyId: chain.sponsorshipPolicyId,
+					preVerificationGasMultiplier: chain.preVerificationGasMultiplier,
+					verificationGasLimitMultiplier: chain.verificationGasLimitMultiplier,
 				})),
 				passkey,
 				safeAccount,
@@ -278,137 +337,305 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		return privateKeyToAddress(generatePrivateKey());
 	};
 
-	const handleAddSigner = async () => {
-		const signerAddress = resolveAddress();
-		if (!signerAddress) return;
+	const reportError = (err: unknown) => {
+		if (err instanceof Error) {
+			console.log(err);
+			setError(err.message);
+		} else {
+			setError("Unknown error");
+		}
+		setStep("idle");
+	};
 
-		setActionSummary({ type: "add", address: signerAddress, tab: "signers" });
-		setCustomAddress("");
-		setShowCustomInput(false);
+	// ── Signer actions ─────────────────────────────────────────────
+	// Each action targets only the chains where the on-chain state actually
+	// permits it. Prevents "already an owner" / "not a current owner" reverts
+	// when chains have drifted out of sync.
 
-		try {
-			await executeMultiChainOp(async (safeAccount) => {
-				const txsPerChain = await Promise.all(
-					chains.map((chain) =>
+	const buildAddSignerOnChains = async (signerAddress: string, chainIndices: number[]) =>
+		executeMultiChainOp(
+			async (safeAccount, targetedChains) =>
+				Promise.all(
+					targetedChains.map((chain) =>
 						safeAccount.createAddOwnerWithThresholdMetaTransactions(
 							signerAddress,
 							1,
 							{ nodeRpcUrl: chain.jsonRpcProvider },
 						),
 					),
-				);
-				return txsPerChain;
-			});
+				),
+			chainIndices,
+		);
+
+	const buildRemoveSignerOnChains = async (signerToRemove: string, chainIndices: number[]) =>
+		executeMultiChainOp(
+			async (safeAccount, targetedChains) =>
+				Promise.all(
+					targetedChains.map((chain) =>
+						safeAccount
+							.createRemoveOwnerMetaTransaction(
+								chain.jsonRpcProvider,
+								signerToRemove,
+								1,
+							)
+							.then((tx) => [tx]),
+					),
+				),
+			chainIndices,
+		);
+
+	const handleAddSigner = async () => {
+		const signerAddress = resolveAddress();
+		if (!signerAddress) return;
+
+		// Only target chains where this address isn't already an owner
+		const presence = presenceVector(ownersPerChain, signerAddress);
+		const targetIndices = presence
+			.map((present, i) => (present ? -1 : i))
+			.filter((i) => i !== -1);
+
+		if (targetIndices.length === 0) {
+			setError("That address is already an owner on every chain.");
+			return;
+		}
+
+		setActionSummary({ type: "add", address: signerAddress, tab: "signers" });
+		setCustomAddress("");
+		setShowCustomInput(false);
+
+		try {
+			await buildAddSignerOnChains(signerAddress, targetIndices);
 		} catch (err) {
-			if (err instanceof Error) {
-				console.log(err);
-				setError(err.message);
-			} else {
-				setError("Unknown error");
-			}
-			setStep("idle");
+			reportError(err);
 		}
 	};
 
 	const handleRemoveSigner = async (signerToRemove: string) => {
+		// Only target chains where this address actually is an owner
+		const presence = presenceVector(ownersPerChain, signerToRemove);
+		const targetIndices = presence
+			.map((present, i) => (present ? i : -1))
+			.filter((i) => i !== -1);
+
+		if (targetIndices.length === 0) {
+			setError("That address isn't an owner on any chain.");
+			return;
+		}
+
 		setActionSummary({ type: "remove", address: signerToRemove, tab: "signers" });
 
 		try {
-			await executeMultiChainOp(async (safeAccount) => {
-				const txsPerChain = await Promise.all(
-					chains.map((chain) =>
-						safeAccount.createRemoveOwnerMetaTransaction(
-							chain.jsonRpcProvider,
-							signerToRemove,
-							1,
-						).then((tx) => [tx]),
-					),
-				);
-				return txsPerChain;
-			});
+			await buildRemoveSignerOnChains(signerToRemove, targetIndices);
 		} catch (err) {
-			if (err instanceof Error) {
-				console.log(err);
-				setError(err.message);
-			} else {
-				setError("Unknown error");
-			}
-			setStep("idle");
+			reportError(err);
 		}
 	};
+
+	// Sync actions: bring divergent state in line with the user's preference
+	const handleSyncSignerToMissingChains = async (signerAddress: string) => {
+		const presence = presenceVector(ownersPerChain, signerAddress);
+		const missingIndices = presence
+			.map((present, i) => (present ? -1 : i))
+			.filter((i) => i !== -1);
+		if (missingIndices.length === 0) return;
+
+		setActionSummary({ type: "add", address: signerAddress, tab: "signers" });
+		try {
+			await buildAddSignerOnChains(signerAddress, missingIndices);
+		} catch (err) {
+			reportError(err);
+		}
+	};
+
+	const handleRemoveSignerFromPresentChains = async (signerAddress: string) => {
+		const presence = presenceVector(ownersPerChain, signerAddress);
+		const presentIndices = presence
+			.map((present, i) => (present ? i : -1))
+			.filter((i) => i !== -1);
+		if (presentIndices.length === 0) return;
+
+		setActionSummary({ type: "remove", address: signerAddress, tab: "signers" });
+		try {
+			await buildRemoveSignerOnChains(signerAddress, presentIndices);
+		} catch (err) {
+			reportError(err);
+		}
+	};
+
+	// ── Guardian actions ────────────────────────────────────────────
 
 	const handleAddGuardian = async () => {
 		const guardianAddress = resolveAddress();
 		if (!guardianAddress) return;
+
+		// Only target chains where the guardian isn't already registered
+		const presence = presenceVector(guardiansPerChain, guardianAddress);
+		const targetIndices = presence
+			.map((present, i) => (present ? -1 : i))
+			.filter((i) => i !== -1);
+
+		if (targetIndices.length === 0) {
+			setError("That address is already a guardian on every chain.");
+			return;
+		}
 
 		setActionSummary({ type: "add", address: guardianAddress, tab: "guardians" });
 		setCustomAddress("");
 		setShowCustomInput(false);
 
 		try {
-			await executeMultiChainOp(async () => {
-				const newThreshold = BigInt(guardians.length + 1);
-				const addGuardianTx =
-					socialRecoveryModule.createAddGuardianWithThresholdMetaTransaction(
-						guardianAddress,
-						newThreshold,
-					);
-
-				if (!moduleEnabled) {
-					const enableTx =
-						socialRecoveryModule.createEnableModuleMetaTransaction(
-							accountAddress,
+			await executeMultiChainOp(
+				async () => {
+					return targetIndices.map((i) => {
+						const newThreshold = BigInt(guardiansPerChain[i].length + 1);
+						const addTx = socialRecoveryModule.createAddGuardianWithThresholdMetaTransaction(
+							guardianAddress,
+							newThreshold,
 						);
-					return chains.map(() => [enableTx, addGuardianTx]);
-				}
-
-				return chains.map(() => [addGuardianTx]);
-			});
+						if (!moduleEnabledPerChain[i]) {
+							const enableTx = socialRecoveryModule.createEnableModuleMetaTransaction(accountAddress);
+							return [enableTx, addTx];
+						}
+						return [addTx];
+					});
+				},
+				targetIndices,
+			);
 		} catch (err) {
-			if (err instanceof Error) {
-				console.log(err);
-				setError(err.message);
-			} else {
-				setError("Unknown error");
-			}
-			setStep("idle");
+			reportError(err);
 		}
 	};
 
 	const handleRemoveGuardian = async (guardianToRemove: string) => {
+		const presence = presenceVector(guardiansPerChain, guardianToRemove);
+		const targetIndices = presence
+			.map((present, i) => (present ? i : -1))
+			.filter((i) => i !== -1);
+
+		if (targetIndices.length === 0) {
+			setError("That address isn't a guardian on any chain.");
+			return;
+		}
+
 		setActionSummary({ type: "remove", address: guardianToRemove, tab: "guardians" });
 
 		try {
-			const newThreshold = BigInt(guardians.length - 1);
-
-			await executeMultiChainOp(async () => {
-				const txsPerChain = await Promise.all(
-					chains.map((chain) =>
-						socialRecoveryModule
-							.createRevokeGuardianWithThresholdMetaTransaction(
-								chain.jsonRpcProvider,
-								accountAddress,
-								guardianToRemove,
-								newThreshold,
-							)
-							.then((tx) => [tx]),
+			await executeMultiChainOp(
+				async (_safe, targetedChains) =>
+					Promise.all(
+						targetedChains.map((chain, j) => {
+							const i = targetIndices[j];
+							const newThreshold = BigInt(Math.max(0, guardiansPerChain[i].length - 1));
+							return socialRecoveryModule
+								.createRevokeGuardianWithThresholdMetaTransaction(
+									chain.jsonRpcProvider,
+									accountAddress,
+									guardianToRemove,
+									newThreshold,
+								)
+								.then((tx) => [tx]);
+						}),
 					),
-				);
-				return txsPerChain;
-			});
+				targetIndices,
+			);
 		} catch (err) {
-			if (err instanceof Error) {
-				console.log(err);
-				setError(err.message);
-			} else {
-				setError("Unknown error");
-			}
-			setStep("idle");
+			reportError(err);
 		}
 	};
 
-	const cosigners = owners.filter(
+	const handleSyncGuardianToMissingChains = async (guardianAddress: string) => {
+		const presence = presenceVector(guardiansPerChain, guardianAddress);
+		const missingIndices = presence
+			.map((present, i) => (present ? -1 : i))
+			.filter((i) => i !== -1);
+		if (missingIndices.length === 0) return;
+
+		setActionSummary({ type: "add", address: guardianAddress, tab: "guardians" });
+		try {
+			await executeMultiChainOp(
+				async () =>
+					missingIndices.map((i) => {
+						const newThreshold = BigInt(guardiansPerChain[i].length + 1);
+						const addTx = socialRecoveryModule.createAddGuardianWithThresholdMetaTransaction(
+							guardianAddress,
+							newThreshold,
+						);
+						if (!moduleEnabledPerChain[i]) {
+							const enableTx = socialRecoveryModule.createEnableModuleMetaTransaction(accountAddress);
+							return [enableTx, addTx];
+						}
+						return [addTx];
+					}),
+				missingIndices,
+			);
+		} catch (err) {
+			reportError(err);
+		}
+	};
+
+	const handleRemoveGuardianFromPresentChains = async (guardianAddress: string) => {
+		const presence = presenceVector(guardiansPerChain, guardianAddress);
+		const presentIndices = presence
+			.map((present, i) => (present ? i : -1))
+			.filter((i) => i !== -1);
+		if (presentIndices.length === 0) return;
+
+		setActionSummary({ type: "remove", address: guardianAddress, tab: "guardians" });
+		try {
+			await executeMultiChainOp(
+				async (_safe, targetedChains) =>
+					Promise.all(
+						targetedChains.map((chain, j) => {
+							const i = presentIndices[j];
+							const newThreshold = BigInt(Math.max(0, guardiansPerChain[i].length - 1));
+							return socialRecoveryModule
+								.createRevokeGuardianWithThresholdMetaTransaction(
+									chain.jsonRpcProvider,
+									accountAddress,
+									guardianAddress,
+									newThreshold,
+								)
+								.then((tx) => [tx]);
+						}),
+					),
+				presentIndices,
+			);
+		} catch (err) {
+			reportError(err);
+		}
+	};
+
+	// Derived state for divergence-aware rendering
+	const unifiedOwners = useMemo(() => unionAddresses(ownersPerChain), [ownersPerChain]);
+	const unifiedGuardians = useMemo(() => unionAddresses(guardiansPerChain), [guardiansPerChain]);
+	const cosigners = unifiedOwners.filter(
 		(o) => o.toLowerCase() !== passkeySignerAddress,
+	);
+
+	const ownersDivergent = useMemo(
+		() => unifiedOwners.some((o) => presenceVector(ownersPerChain, o).some((p) => !p)),
+		[ownersPerChain, unifiedOwners],
+	);
+	const guardiansDivergent = useMemo(
+		() => unifiedGuardians.some((g) => presenceVector(guardiansPerChain, g).some((p) => !p)),
+		[guardiansPerChain, unifiedGuardians],
+	);
+
+	// Render the per-chain presence row for one address. Divergent chains
+	// (missing this address) appear dimmed with a tooltip.
+	const renderPresenceRow = (presence: boolean[]) => (
+		<div className="presence-row">
+			{chains.map((chain, i) => (
+				<span
+					key={i}
+					className={`presence-chain ${presence[i] ? "presence-on" : "presence-off"}`}
+					title={presence[i] ? `On ${chain.chainName}` : `Missing on ${chain.chainName}`}
+				>
+					<ChainIcon chainId={chain.chainId} size={14} />
+					<span className="presence-chain-label">{chain.chainName}</span>
+				</span>
+			))}
+		</div>
 	);
 
 	const renderChainStatusCard = (
@@ -524,21 +751,61 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
 					{activeTab === "signers" && (
 						<>
+							{ownersDivergent && (
+								<div className="divergence-banner">
+									<strong>Account is out of sync across chains.</strong>
+									<span> One or more signers exist on some chains but not others. Use the inline actions to bring chains in line with your preferred state.</span>
+								</div>
+							)}
 							<div className="owner-list">
 								<div className="owner-item">
 									<span className="owner-label">Passkey (you)</span>
 								</div>
-								{cosigners.map((cosigner) => (
-									<div key={cosigner} className="owner-item">
-										<code className="owner-item-address">{cosigner}</code>
-										<button
-											className="remove-button"
-											onClick={() => handleRemoveSigner(cosigner)}
+								{cosigners.map((cosigner) => {
+									const presence = presenceVector(ownersPerChain, cosigner);
+									const allChains = presence.every(Boolean);
+									const missing = presence.filter((p) => !p).length;
+									const present = presence.filter(Boolean).length;
+									return (
+										<div
+											key={cosigner}
+											className={`owner-item owner-item-block ${allChains ? "" : "owner-item-divergent"}`}
 										>
-											Remove
-										</button>
-									</div>
-								))}
+											<div className="owner-item-row">
+												<code className="owner-item-address">{cosigner}</code>
+												<button
+													className="remove-button"
+													onClick={() => handleRemoveSigner(cosigner)}
+													title={allChains ? "Remove from all chains" : `Remove from ${present} chain${present > 1 ? "s" : ""} where present`}
+												>
+													Remove
+												</button>
+											</div>
+											{renderPresenceRow(presence)}
+											{!allChains && (
+												<div className="divergence-actions">
+													<span className="divergence-hint">
+														Missing on {missing} chain{missing > 1 ? "s" : ""}.
+													</span>
+													<button
+														className="sync-button sync-add"
+														onClick={() => handleSyncSignerToMissingChains(cosigner)}
+														title={`Add this signer on the ${missing} chain${missing > 1 ? "s" : ""} where it's missing`}
+													>
+														Sync to all chains
+													</button>
+													<button
+														className="sync-button sync-remove"
+														onClick={() => handleRemoveSignerFromPresentChains(cosigner)}
+														title={`Remove from the ${present} chain${present > 1 ? "s" : ""} where it currently exists`}
+													>
+														Remove from {present} chain{present > 1 ? "s" : ""}
+													</button>
+												</div>
+											)}
+										</div>
+									);
+								})}
 							</div>
 							<p className="action-description">
 								Add or remove authorized signers across all chains. For shared business accounts.
@@ -549,18 +816,58 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
 					{activeTab === "guardians" && (
 						<>
+							{guardiansDivergent && (
+								<div className="divergence-banner">
+									<strong>Guardian state is out of sync across chains.</strong>
+									<span> One or more guardians exist on some chains but not others. Use the inline actions to bring chains in line.</span>
+								</div>
+							)}
 							<div className="owner-list">
-								{guardians.map((guardian) => (
-									<div key={guardian} className="owner-item">
-										<code className="owner-item-address">{guardian}</code>
-										<button
-											className="remove-button"
-											onClick={() => handleRemoveGuardian(guardian)}
+								{unifiedGuardians.map((guardian) => {
+									const presence = presenceVector(guardiansPerChain, guardian);
+									const allChains = presence.every(Boolean);
+									const missing = presence.filter((p) => !p).length;
+									const present = presence.filter(Boolean).length;
+									return (
+										<div
+											key={guardian}
+											className={`owner-item owner-item-block ${allChains ? "" : "owner-item-divergent"}`}
 										>
-											Remove
-										</button>
-									</div>
-								))}
+											<div className="owner-item-row">
+												<code className="owner-item-address">{guardian}</code>
+												<button
+													className="remove-button"
+													onClick={() => handleRemoveGuardian(guardian)}
+													title={allChains ? "Remove from all chains" : `Remove from ${present} chain${present > 1 ? "s" : ""} where present`}
+												>
+													Remove
+												</button>
+											</div>
+											{renderPresenceRow(presence)}
+											{!allChains && (
+												<div className="divergence-actions">
+													<span className="divergence-hint">
+														Missing on {missing} chain{missing > 1 ? "s" : ""}.
+													</span>
+													<button
+														className="sync-button sync-add"
+														onClick={() => handleSyncGuardianToMissingChains(guardian)}
+														title={`Add this guardian on the ${missing} chain${missing > 1 ? "s" : ""} where it's missing`}
+													>
+														Sync to all chains
+													</button>
+													<button
+														className="sync-button sync-remove"
+														onClick={() => handleRemoveGuardianFromPresentChains(guardian)}
+														title={`Remove from the ${present} chain${present > 1 ? "s" : ""} where it currently exists`}
+													>
+														Remove from {present} chain{present > 1 ? "s" : ""}
+													</button>
+												</div>
+											)}
+										</div>
+									);
+								})}
 							</div>
 							<p className="action-description">
 								Set up account recovery across all chains.
@@ -599,9 +906,12 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 						);
 					})()}
 					<div className="chain-results">
-						{chainResults.map((result, i) =>
-							renderChainStatusCard(i, result),
-						)}
+						{chainResults.map((result, i) => {
+							const isEmpty = !result.userOpHash && !result.txHash && !result.error;
+							// Skip chains that didn't participate in this op (subset operations)
+							if (isEmpty && !retrying) return null;
+							return renderChainStatusCard(i, result);
+						})}
 					</div>
 					{step === "success" && (() => {
 						const failedCount = chainResults.filter((r) => r.error).length;
@@ -618,23 +928,26 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 										{retrying ? "Retrying..." : `Retry ${failedCount} failed chain${failedCount > 1 ? "s" : ""}`}
 									</button>
 								)}
-								{succeededCount > 0 && (
-									<>
-										<div className="completion-metrics">
-											<div className="metric">
-												<span className="metric-value">1</span>
-												<span className="metric-label">signature</span>
+								{succeededCount > 0 && (() => {
+									const targetedCount = chainResults.filter((r) => r.txHash || r.error).length;
+									return (
+										<>
+											<div className="completion-metrics">
+												<div className="metric">
+													<span className="metric-value">1</span>
+													<span className="metric-label">signature</span>
+												</div>
+												<div className="metric">
+													<span className="metric-value">{succeededCount}</span>
+													<span className="metric-label">chain{succeededCount > 1 ? "s" : ""} updated</span>
+												</div>
 											</div>
-											<div className="metric">
-												<span className="metric-value">{succeededCount}</span>
-												<span className="metric-label">chain{succeededCount > 1 ? "s" : ""} updated</span>
-											</div>
-										</div>
-										<p className="metric-contrast">
-											Without Unified Account: {chains.length} separate signatures, {chains.length} gas payments
-										</p>
-									</>
-								)}
+											<p className="metric-contrast">
+												Without Unified Account: {targetedCount} separate signatures, {targetedCount} gas payments
+											</p>
+										</>
+									);
+								})()}
 								<button
 									className="primary-button"
 									style={{ marginTop: "1rem" }}
