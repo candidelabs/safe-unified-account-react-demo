@@ -1,4 +1,4 @@
-import { parseAbi } from 'viem';
+import { parseAbi, decodeEventLog, type Hex } from 'viem';
 import type { AccountChainConfig, DestinationChainConfig } from './chains';
 
 // ── Across SpokePool ABI ────────────────────────────────────────
@@ -143,4 +143,119 @@ export function grossUpInputAmount(
   // ceilDiv(output × 1e18, denom)
   const inputAmount = (outputTarget * ONE_E18 + denom - 1n) / denom;
   return inputAmount + 1n;
+}
+
+// ── Deposit ID extraction ───────────────────────────────────────
+
+/**
+ * Raw RPC log shape after JSON-parsing abstractionkit's stringified
+ * `UserOperationReceipt.logs` blob (which is typed `string`, not `Log[]`).
+ */
+interface RawLog {
+  address: string;
+  topics: string[];
+  data: string;
+}
+
+/**
+ * Find the SpokePool's FundsDeposited event in a transaction receipt's
+ * logs and return the depositId. Looks at logs emitted by the supplied
+ * `spokePoolAddress` only — keeps us safe against unrelated contracts
+ * emitting a similarly-shaped event.
+ *
+ * abstractionkit's `UserOperationReceipt.logs` is a JSON-stringified blob
+ * (see `index.d.mts:110` — `logs: string`), not an array. We parse it
+ * here so callers can pass the receipt's `logs` field directly.
+ */
+export function extractDepositIdFromLogs(
+  rawLogs: string,
+  spokePoolAddress: string,
+): bigint {
+  const lower = spokePoolAddress.toLowerCase();
+  let parsed: RawLog[];
+  try {
+    parsed = JSON.parse(rawLogs) as RawLog[];
+  } catch (e) {
+    throw new Error(`Could not parse receipt logs JSON: ${(e as Error).message}`);
+  }
+  for (const log of parsed) {
+    if (!log.address || log.address.toLowerCase() !== lower) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: SPOKE_POOL_ABI,
+        data: log.data as Hex,
+        topics: log.topics as [Hex, ...Hex[]],
+      });
+      if (decoded.eventName === 'FundsDeposited') {
+        return BigInt(decoded.args.depositId);
+      }
+    } catch {
+      // Not a SpokePool event we recognize — skip.
+    }
+  }
+  throw new Error(`No FundsDeposited log emitted by ${spokePoolAddress}`);
+}
+
+// ── /deposit/status + polling ───────────────────────────────────
+
+interface DepositStatusRaw {
+  status: string;            // "pending" | "filled" | "expired" | other
+  fillTx?: string;
+  destinationChainId?: string;
+}
+
+/**
+ * Query Across deposit status. Returns one of pending/filled/expired
+ * (any unrecognized status is normalized to "pending" — Across may add
+ * intermediate states).
+ */
+export async function getDepositStatus(
+  originChainId: bigint,
+  depositId: bigint,
+): Promise<DepositStatus> {
+  const url = new URL(`${ACROSS_API_BASE}/deposit/status`);
+  url.searchParams.set('originChainId', originChainId.toString());
+  url.searchParams.set('depositId', depositId.toString());
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString());
+  } catch (e) {
+    throw new Error('Across status endpoint unreachable');
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Across status rejected: ${text}`);
+  }
+
+  const raw = (await res.json()) as DepositStatusRaw;
+  const status: DepositStatus['status'] =
+    raw.status === 'filled' ? 'filled' :
+    raw.status === 'expired' ? 'expired' : 'pending';
+  return {
+    status,
+    fillTxHash: raw.fillTx ? (raw.fillTx as `0x${string}`) : undefined,
+  };
+}
+
+/**
+ * Poll `getDepositStatus` until it returns a terminal state (`filled` or
+ * `expired`), or until `timeoutMs` elapses (in which case the last status
+ * — typically `pending` — is returned).
+ */
+export async function waitForDeposit(
+  originChainId: bigint,
+  depositId: bigint,
+  timeoutMs: number = 5 * 60 * 1000,
+  pollIntervalMs: number = 5_000,
+): Promise<DepositStatus> {
+  const deadline = Date.now() + timeoutMs;
+  let last: DepositStatus = { status: 'pending' };
+  while (Date.now() < deadline) {
+    last = await getDepositStatus(originChainId, depositId);
+    if (last.status === 'filled' || last.status === 'expired') return last;
+    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+  }
+  return last;
 }
