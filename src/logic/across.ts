@@ -1,4 +1,5 @@
 import { parseAbi } from 'viem';
+import type { AccountChainConfig, DestinationChainConfig } from './chains';
 
 // ── Across SpokePool ABI ────────────────────────────────────────
 //
@@ -51,3 +52,66 @@ export const ACROSS_API_BASE: string =
   (import.meta.env.VITE_ACROSS_API_BASE as string) ?? 'https://app.across.to/api';
 
 export const ZERO_ADDRESS: `0x${string}` = '0x0000000000000000000000000000000000000000';
+
+// ── /suggested-fees ─────────────────────────────────────────────
+
+interface SuggestedFeesRaw {
+  totalRelayFee:  { total: string; pct: string };
+  lpFee:          { total: string; pct: string };
+  outputAmount:   string;
+  timestamp:      string;
+  fillDeadline:   string;
+  exclusiveRelayer:    string;
+  exclusivityDeadline: string;
+  spokePoolAddress:    string;
+}
+
+/**
+ * Quote a single bridge leg. Returns the relayer + LP fees, the
+ * resulting recipient `outputAmount` for the supplied `inputAmount`,
+ * and the `quoteTimestamp` / `fillDeadline` that must be echoed into
+ * `depositV3`.
+ *
+ * Throws "Across quote endpoint unreachable" on network failure and
+ * "Across quote rejected: <reason>" on a 4xx/5xx response.
+ */
+export async function quoteAcrossFee(args: {
+  sourceChain: AccountChainConfig;
+  destinationChain: DestinationChainConfig;
+  inputAmount: bigint;
+  recipient: `0x${string}`;
+}): Promise<SuggestedFeesQuote> {
+  const url = new URL(`${ACROSS_API_BASE}/suggested-fees`);
+  url.searchParams.set('inputToken', args.sourceChain.token);
+  url.searchParams.set('outputToken', args.destinationChain.token);
+  url.searchParams.set('originChainId', args.sourceChain.chainId.toString());
+  url.searchParams.set('destinationChainId', args.destinationChain.chainId.toString());
+  url.searchParams.set('amount', args.inputAmount.toString());
+  url.searchParams.set('recipient', args.recipient);
+
+  let res: Response;
+  try {
+    res = await fetch(url.toString());
+  } catch (e) {
+    throw new Error('Across quote endpoint unreachable');
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(`Across quote rejected: ${text}`);
+  }
+
+  const raw = (await res.json()) as SuggestedFeesRaw;
+
+  return {
+    totalRelayFeeTotal: BigInt(raw.totalRelayFee.total),
+    totalRelayFeePct:   BigInt(raw.totalRelayFee.pct),
+    lpFeePct:           BigInt(raw.lpFee.pct),
+    outputAmount:       BigInt(raw.outputAmount),
+    timestamp:          Number(raw.timestamp),
+    fillDeadline:       Number(raw.fillDeadline),
+    exclusiveRelayer:   raw.exclusiveRelayer as `0x${string}`,
+    exclusivityDeadline: Number(raw.exclusivityDeadline),
+    spokePoolAddress:   raw.spokePoolAddress as `0x${string}`,
+  };
+}
