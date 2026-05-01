@@ -1,8 +1,8 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react-swc'
 
-const REQUIRED_PER_ACCOUNT_CHAIN = ['ID', 'BUNDLER_URL', 'JSON_RPC_PROVIDER', 'PAYMASTER_URL', 'USDT0_TOKEN', 'USDT0_OFT', 'LZ_EID']
-const REQUIRED_PER_DEST_CHAIN = ['ID', 'NAME', 'JSON_RPC_PROVIDER', 'EXPLORER_URL', 'USDT0_TOKEN', 'LZ_EID']
+const REQUIRED_PER_ACCOUNT_CHAIN = ['ID', 'BUNDLER_URL', 'JSON_RPC_PROVIDER', 'PAYMASTER_URL', 'TOKEN', 'SPOKE_POOL']
+const REQUIRED_PER_DEST_CHAIN = ['ID', 'NAME', 'JSON_RPC_PROVIDER', 'EXPLORER_URL', 'TOKEN']
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd())
