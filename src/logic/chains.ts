@@ -1,12 +1,12 @@
 /**
  * Chain config model.
  *
- * `DestinationChainConfig` — any chain USDT0 OFT can deliver to. Needs only
- * balance-read + LZ-routing info. No Safe userOps ever run here if it's
- * destination-only.
+ * `DestinationChainConfig` — any chain Across can deliver to. Only needs
+ * recipient-balance read info and the canonical token on that chain.
  *
- * `AccountChainConfig` — where the Safe operates (source of userOps, bundler,
- * paymaster, OFT `send()`). Every account chain is also a valid destination.
+ * `AccountChainConfig` — where the Safe operates (source of userOps,
+ * bundler, paymaster, Across deposit). Every account chain is also a valid
+ * destination.
  */
 
 export interface DestinationChainConfig {
@@ -14,17 +14,26 @@ export interface DestinationChainConfig {
   chainName: string;
   jsonRpcProvider: string;
   explorerUrl: string;
-  usdt0Token: string;
-  lzEid: number;
+  token: string;          // canonical ERC-20 address on this chain
+  tokenDecimals: number;  // 6 for USDT/USDC; supports future WETH/ETH demos
 }
 
 export interface AccountChainConfig extends DestinationChainConfig {
   bundlerUrl: string;
   paymasterUrl: string;
-  usdt0Oft: string;
+  spokePoolAddress: string;  // Across SpokePool on this chain
   sponsorshipPolicyId?: string;
   preVerificationGasMultiplier?: number;
   verificationGasLimitMultiplier?: number;
+}
+
+function parseDecimals(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return 6;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 36) {
+    throw new Error(`Invalid token decimals: ${raw}`);
+  }
+  return n;
 }
 
 function loadAccountChains(): AccountChainConfig[] {
@@ -55,9 +64,9 @@ function loadAccountChains(): AccountChainConfig[] {
         : undefined,
       chainName: (import.meta.env[`VITE_CHAIN${n}_NAME`] as string) ?? '',
       explorerUrl: (import.meta.env[`VITE_CHAIN${n}_EXPLORER_URL`] as string) ?? '',
-      usdt0Token: import.meta.env[`VITE_CHAIN${n}_USDT0_TOKEN`] as string,
-      usdt0Oft: import.meta.env[`VITE_CHAIN${n}_USDT0_OFT`] as string,
-      lzEid: Number(import.meta.env[`VITE_CHAIN${n}_LZ_EID`]),
+      token: import.meta.env[`VITE_CHAIN${n}_TOKEN`] as string,
+      tokenDecimals: parseDecimals(import.meta.env[`VITE_CHAIN${n}_TOKEN_DECIMALS`] as string | undefined),
+      spokePoolAddress: import.meta.env[`VITE_CHAIN${n}_SPOKE_POOL`] as string,
     });
   }
 
@@ -76,8 +85,8 @@ function loadDestinationOnlyChains(): DestinationChainConfig[] {
       chainName: (import.meta.env[`VITE_DEST_CHAIN${n}_NAME`] as string) ?? '',
       jsonRpcProvider: import.meta.env[`VITE_DEST_CHAIN${n}_JSON_RPC_PROVIDER`] as string,
       explorerUrl: (import.meta.env[`VITE_DEST_CHAIN${n}_EXPLORER_URL`] as string) ?? '',
-      usdt0Token: import.meta.env[`VITE_DEST_CHAIN${n}_USDT0_TOKEN`] as string,
-      lzEid: Number(import.meta.env[`VITE_DEST_CHAIN${n}_LZ_EID`]),
+      token: import.meta.env[`VITE_DEST_CHAIN${n}_TOKEN`] as string,
+      tokenDecimals: parseDecimals(import.meta.env[`VITE_DEST_CHAIN${n}_TOKEN_DECIMALS`] as string | undefined),
     });
   }
 
@@ -87,9 +96,9 @@ function loadDestinationOnlyChains(): DestinationChainConfig[] {
 export const accountChains: AccountChainConfig[] = loadAccountChains();
 
 /**
- * All valid destinations: every account chain (which can receive locally or
- * via its own peer), plus any destination-only chains the user has declared.
- * Ordered so account chains appear first in the UI selector.
+ * All valid destinations: every account chain plus any destination-only
+ * chains the user has declared. Ordered so account chains appear first
+ * in the UI selector — TransferCard relies on this for its chain picker.
  */
 export const destinationChains: DestinationChainConfig[] = [
   ...accountChains,
@@ -97,9 +106,14 @@ export const destinationChains: DestinationChainConfig[] = [
 ];
 
 /**
- * True if a destination chain is one where the Safe also has balance / can run
- * userOps. When destination === account chain, the contribution from that
- * chain can be a local ERC-20 `transfer()` instead of an OFT bridge.
+ * UI label for the bridged token (e.g. "USDT", "USDC"). Defaults to "USDT".
+ */
+export const tokenSymbol: string = (import.meta.env.VITE_TOKEN_SYMBOL as string) ?? 'USDT';
+
+/**
+ * True if a destination chain is one where the Safe also has balance / can
+ * run userOps. When destination === account chain, the contribution from
+ * that chain can be a local ERC-20 `transfer()` instead of an Across deposit.
  */
 export function isAccountChain(
   dest: DestinationChainConfig,
