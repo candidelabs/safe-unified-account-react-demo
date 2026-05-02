@@ -6,50 +6,50 @@ import {
 import type { PasskeyLocalStorageFormat } from '../logic/passkeys';
 import { signAndSendMultiChainUserOps } from '../logic/userOp';
 import { getItem } from '../logic/storage';
-import { accountChains, destinationChains } from '../logic/chains';
+import { accountChains, destinationChains, tokenSymbol } from '../logic/chains';
 import { ChainIcon } from './ChainIcon';
 import {
   readAllBalances,
-  readBalance,
-  readNativeBalance,
   computeTransferSplit,
   buildTransferMetaTransactions,
-  quoteBridgeFee,
-  waitForDestinationBalance,
-  type ChainContribution,
+  resolveLegs,
+  type ResolvedLeg,
   type TransferIntent,
 } from '../logic/transfer';
 
-type Step = 'idle' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'delivering' | 'success';
+type Step = 'idle' | 'resolving' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'delivering' | 'success';
 
 interface ChainResult {
   chainIndex: number;
   userOpHash?: string;
   txHash?: string;
+  depositId?: bigint;
+  fillTxHash?: string;
   error?: string;
   type: 'local-transfer' | 'bridge';
-  // Bridge legs only: source is confirmed but LZ delivery to destination is still pending.
   delivering?: boolean;
   delivered?: boolean;
+  expired?: boolean;
 }
 
 const ADDRESS_REGEX = /^0x[0-9a-fA-F]{40}$/;
-const USDT0_DECIMALS = 6;
+// both USDT and USDC are 6-decimal in this demo
+const TOKEN_DECIMALS = 6;
 
-function formatUsdt(amount: bigint): string {
-  const whole = amount / 10n ** BigInt(USDT0_DECIMALS);
-  const frac = amount % 10n ** BigInt(USDT0_DECIMALS);
-  const fracStr = frac.toString().padStart(USDT0_DECIMALS, '0').replace(/0+$/, '');
+function formatToken(amount: bigint): string {
+  const whole = amount / 10n ** BigInt(TOKEN_DECIMALS);
+  const frac = amount % 10n ** BigInt(TOKEN_DECIMALS);
+  const fracStr = frac.toString().padStart(TOKEN_DECIMALS, '0').replace(/0+$/, '');
   return fracStr ? `${whole}.${fracStr}` : whole.toString();
 }
 
-function parseUsdt(input: string): bigint | null {
+function parseToken(input: string): bigint | null {
   const trimmed = input.trim();
   if (!trimmed || !/^\d+(\.\d{0,6})?$/.test(trimmed)) return null;
   const parts = trimmed.split('.');
   const whole = BigInt(parts[0] || '0');
-  const fracStr = (parts[1] || '').padEnd(USDT0_DECIMALS, '0').slice(0, USDT0_DECIMALS);
-  return whole * 10n ** BigInt(USDT0_DECIMALS) + BigInt(fracStr);
+  const fracStr = (parts[1] || '').padEnd(TOKEN_DECIMALS, '0').slice(0, TOKEN_DECIMALS);
+  return whole * 10n ** BigInt(TOKEN_DECIMALS) + BigInt(fracStr);
 }
 
 function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
@@ -61,13 +61,13 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [destChainIndex, setDestChainIndex] = useState(0);
   const [step, setStep] = useState<Step>('idle');
   const [error, setError] = useState<string>();
-  const [contributions, setContributions] = useState<ChainContribution[]>([]);
+  const [legs, setLegs] = useState<ResolvedLeg[]>([]);
   const [chainResults, setChainResults] = useState<ChainResult[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
 
   const accountAddress = getItem('accountAddress') as `0x${string}`;
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
-  const parsedAmount = parseUsdt(amountInput);
+  const parsedAmount = parseToken(amountInput);
   const destination = destinationChains[destChainIndex];
 
   const fetchBalances = useCallback(async () => {
@@ -92,9 +92,10 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const isAmountValid = parsedAmount !== null && parsedAmount > 0n && parsedAmount <= unifiedBalance;
   const canSend = isValidRecipient && !isSelfTransfer && isAmountValid && step === 'idle';
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!parsedAmount) return;
     setError(undefined);
+    setStep('resolving');
     try {
       const intent: TransferIntent = {
         totalAmount: parsedAmount,
@@ -102,10 +103,12 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         destination,
       };
       const split = computeTransferSplit(accountChains, balances, intent);
-      setContributions(split);
+      const resolved = await resolveLegs(accountChains, balances, split, intent);
+      setLegs(resolved);
       setStep('confirm');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to compute transfer split');
+      setError(err instanceof Error ? err.message : 'Failed to plan transfer');
+      setStep('idle');
     }
   };
 
@@ -269,7 +272,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
   const handleReset = () => {
     setStep('idle');
-    setContributions([]);
+    setLegs([]);
     setChainResults([]);
     setAmountInput('');
     setRecipient('');
@@ -280,15 +283,15 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
     <div className="card action-card">
       {(step === 'idle' || step === 'confirm') && (
         <div className="unified-balance">
-          <div className="balance-label">Unified USDT Balance</div>
+          <div className="balance-label">Unified {tokenSymbol} Balance</div>
           <div className="balance-amount">
-            {loadingBalances ? '...' : formatUsdt(unifiedBalance)}
+            {loadingBalances ? '...' : formatToken(unifiedBalance)}
           </div>
           <div className="balance-breakdown">
             {accountChains.map((chain, i) => (
               <span key={i} className="chain-balance">
                 <ChainIcon chainId={chain.chainId} />
-                {chain.chainName}: {formatUsdt(balances[i])}
+                {chain.chainName}: {formatToken(balances[i])}
               </span>
             ))}
           </div>
@@ -310,7 +313,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             {isSelfTransfer && <span className="field-error">Cannot send to your own address</span>}
           </div>
           <div className="form-field">
-            <label className="form-label">Amount (USDT)</label>
+            <label className="form-label">Amount ({tokenSymbol})</label>
             <input type="text" className="address-input" placeholder="0.00" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
           </div>
           <div className="form-field">
@@ -325,7 +328,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             </div>
           </div>
           <button className="primary-button" onClick={handleSend} disabled={!canSend}>
-            Send {parsedAmount && isAmountValid ? `${formatUsdt(parsedAmount)} USDT` : 'USDT'}
+            Send {parsedAmount && isAmountValid ? `${formatToken(parsedAmount)} ${tokenSymbol}` : tokenSymbol}
           </button>
         </div>
       )}
@@ -334,27 +337,27 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         <div className="confirm-breakdown">
           <h3>Transaction Breakdown</h3>
           <p className="confirm-summary">
-            Sending {formatUsdt(parsedAmount!)} USDT to{' '}
+            Sending {formatToken(parsedAmount!)} {tokenSymbol} to{' '}
             <code>{recipient.slice(0, 8)}...{recipient.slice(-6)}</code> on{' '}
             {destination.chainName}
           </p>
           <div className="confirm-steps">
-            {contributions.map((contrib, i) => (
+            {legs.map((leg, i) => (
               <div key={i} className="confirm-step">
                 <span className="confirm-chain">
-                  <ChainIcon chainId={accountChains[contrib.chainIndex].chainId} />
-                  {accountChains[contrib.chainIndex].chainName}
+                  <ChainIcon chainId={accountChains[leg.chainIndex].chainId} />
+                  {accountChains[leg.chainIndex].chainName}
                 </span>
                 <span className="confirm-action">
-                  {contrib.type === 'local-transfer'
-                    ? `Transfer ${formatUsdt(contrib.amount)} USDT`
-                    : `Bridge ${formatUsdt(contrib.amount)} USDT → ${destination.chainName}`}
+                  {leg.type === 'local-transfer'
+                    ? `Transfer ${formatToken(leg.outputAmount)} ${tokenSymbol}`
+                    : `Bridge ${formatToken(leg.outputAmount)} ${tokenSymbol} → ${destination.chainName}`}
                 </span>
               </div>
             ))}
           </div>
-          {contributions.some((c) => c.type === 'bridge') && (
-            <p className="confirm-note">Bridged funds arrive at the recipient in ~1 minute via LayerZero.</p>
+          {legs.some((l) => l.type === 'bridge') && (
+            <p className="confirm-note">Bridged funds arrive at the recipient in seconds via Across.</p>
           )}
           <div className="confirm-actions">
             <button className="primary-button" onClick={handleConfirm}>Confirm &amp; Sign</button>
@@ -363,6 +366,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         </div>
       )}
 
+      {step === 'resolving' && <p className="step-label">Quoting Across fees…</p>}
       {step === 'preparing' && <p className="step-label">Preparing multichain operations…</p>}
       {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
       {step === 'delivering' && <p className="step-label">Source confirmed — waiting on LayerZero delivery to destination…</p>}
@@ -384,7 +388,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             } else if (hasUndeliveredBridge) {
               message = `Source transactions confirmed across ${chainCountLabel} with a single signature. Bridge delivery still in progress.`;
             } else {
-              message = `Sent ${formatUsdt(parsedAmount!)} USDT across ${chainCountLabel} with a single signature`;
+              message = `Sent ${formatToken(parsedAmount!)} ${tokenSymbol} across ${chainCountLabel} with a single signature`;
             }
             return (
               <div className={bannerClass}>
