@@ -1,7 +1,9 @@
-import { createPublicClient, http, parseAbi } from 'viem';
+import { createPublicClient, encodeFunctionData, http, parseAbi, type Hex } from 'viem';
 import type { MetaTransaction } from 'abstractionkit';
 import type { AccountChainConfig, DestinationChainConfig } from './chains';
 import {
+  SPOKE_POOL_ABI,
+  ZERO_ADDRESS,
   quoteAcrossFee,
   grossUpInputAmount,
   type SuggestedFeesQuote,
@@ -270,4 +272,74 @@ function findSpillTarget(
     if (balances[i] > consumed) return i;
   }
   return null;
+}
+
+// ── MetaTransaction building ───────────────────────────────────
+
+export function buildTransferMetaTransactions(
+  accountChains: AccountChainConfig[],
+  legs: ResolvedLeg[],
+  intent: TransferIntent,
+  safeAddress: `0x${string}`,
+): TransferPlan[] {
+  const plans: TransferPlan[] = [];
+
+  for (const leg of legs) {
+    const chain = accountChains[leg.chainIndex];
+
+    if (leg.type === 'local-transfer') {
+      const transferData = encodeFunctionData({
+        abi: ERC20_ABI,
+        functionName: 'transfer',
+        args: [intent.recipient, leg.outputAmount],
+      });
+      plans.push({
+        chainIndex: leg.chainIndex,
+        transactions: [{
+          to: chain.token,
+          value: 0n,
+          data: transferData,
+        }],
+      });
+      continue;
+    }
+
+    // Bridge leg: approve SpokePool + depositV3
+    const quote = leg.quote!;
+
+    const approveData = encodeFunctionData({
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [chain.spokePoolAddress as `0x${string}`, leg.inputAmount],
+    });
+
+    const depositData = encodeFunctionData({
+      abi: SPOKE_POOL_ABI,
+      functionName: 'depositV3',
+      args: [
+        safeAddress,
+        intent.recipient,
+        chain.token as `0x${string}`,
+        intent.destination.token as `0x${string}`,
+        leg.inputAmount,
+        leg.outputAmount,
+        intent.destination.chainId,
+        quote.exclusiveRelayer ?? ZERO_ADDRESS,
+        quote.timestamp,
+        quote.fillDeadline,
+        quote.exclusivityDeadline,
+        '0x' as Hex,
+      ],
+    });
+
+    plans.push({
+      chainIndex: leg.chainIndex,
+      transactions: [
+        { to: chain.token, value: 0n, data: approveData },
+        { to: chain.spokePoolAddress, value: 0n, data: depositData },
+      ],
+    });
+  }
+
+  return plans;
 }
