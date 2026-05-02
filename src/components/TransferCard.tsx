@@ -16,6 +16,7 @@ import {
   type ResolvedLeg,
   type TransferIntent,
 } from '../logic/transfer';
+import { extractDepositIdFromLogs, waitForDeposit } from '../logic/across';
 
 type Step = 'idle' | 'resolving' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'delivering' | 'success';
 
@@ -112,6 +113,15 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
     }
   };
 
+  // Helper for per-result patches that survives interleaved async updates.
+  const updateChainResult = (index: number, patch: Partial<ChainResult>) => {
+    setChainResults((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], ...patch };
+      return next;
+    });
+  };
+
   const handleConfirm = async () => {
     if (!parsedAmount) return;
     setStep('preparing');
@@ -129,41 +139,16 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         passkey.pubkeyCoordinates,
       ]);
 
-      // Pre-flight: check native balance for bridge fees on source chains
-      const bridgeContribs = contributions.filter((c) => c.type === 'bridge');
-      if (bridgeContribs.length > 0) {
-        for (const contrib of bridgeContribs) {
-          const srcChain = accountChains[contrib.chainIndex];
-          const [nativeBalance, requiredFee] = await Promise.all([
-            readNativeBalance(srcChain, accountAddress),
-            quoteBridgeFee(srcChain, intent.destination, intent.recipient, contrib.amount),
-          ]);
-          if (nativeBalance < requiredFee) {
-            throw new Error(
-              `Insufficient ${srcChain.chainName} native balance for LayerZero fee. ` +
-              `Need ${requiredFee} wei, have ${nativeBalance} wei.`
-            );
-          }
-        }
-      }
+      // No native-fee preflight: Across deposits carry msg.value=0; gas is
+      // paymaster-sponsored.
 
-      // Snapshot recipient's destination balance so we can detect LZ delivery
-      // by waiting for the balance to grow by the full intended total.
-      const recipientStartBalance = bridgeContribs.length > 0
-        ? await readBalance(intent.destination, intent.recipient)
-        : 0n;
-
-      const plans = await buildTransferMetaTransactions(
+      const plans = buildTransferMetaTransactions(
         accountChains,
-        contributions,
+        legs,
         intent,
         accountAddress,
       );
 
-      // Create UserOperations for participating chains only.
-      // `expectedSigners` lets the SDK generate a WebAuthn-shaped dummy
-      // signature for gas estimation so the bundler's estimate matches what
-      // the real signature will consume at execution.
       const userOps = await Promise.all(
         plans.map((plan) => {
           const chain = accountChains[plan.chainIndex];
@@ -178,7 +163,6 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       setStep('signing');
 
-      // Use main's orchestrator — includes paymaster commit/finalize
       const results = await signAndSendMultiChainUserOps(
         plans.map((plan, i) => ({
           userOp: userOps[i],
@@ -201,64 +185,65 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             chainIndex: plan.chainIndex,
             userOpHash: r.status === 'sent' ? r.response.userOperationHash : undefined,
             error: r.status === 'failed' ? r.error : undefined,
-            type: contributions.find((c) => c.chainIndex === plan.chainIndex)!.type,
+            type: legs.find((l) => l.chainIndex === plan.chainIndex)!.type,
           };
         }),
       );
 
-      // Wait for inclusion per chain
-      const promises = results.map((r, i) => {
+      // Track per-leg depositIds in a local map so the delivery-wait phase
+      // can read them without reaching back into React state.
+      const legDeposits = new Map<number, { depositId: bigint; originChainId: bigint }>();
+
+      const inclusionPromises = results.map((r, i) => {
         if (r.status !== 'sent') return Promise.resolve();
         return r.response.included().then((receipt) => {
-          setChainResults((prev) => {
-            const next = [...prev];
-            if (receipt == null) {
-              next[i] = { ...next[i], error: 'Receipt not found (timeout)' };
-            } else if (receipt.success) {
-              next[i] = { ...next[i], txHash: receipt.receipt.transactionHash };
-            } else {
-              next[i] = { ...next[i], error: 'Execution failed' };
-            }
-            return next;
-          });
+          const plan = plans[i];
+          const leg = legs.find((l) => l.chainIndex === plan.chainIndex)!;
+          const sourceChain = accountChains[plan.chainIndex];
+
+          if (receipt == null) {
+            updateChainResult(i, { error: 'Receipt not found (timeout)' });
+            return;
+          }
+          if (!receipt.success) {
+            updateChainResult(i, { error: 'Execution failed' });
+            return;
+          }
+
+          updateChainResult(i, { txHash: receipt.receipt.transactionHash });
+
+          if (leg.type !== 'bridge') return;
+
+          try {
+            const depositId = extractDepositIdFromLogs(
+              receipt.receipt.logs,
+              sourceChain.spokePoolAddress,
+            );
+            legDeposits.set(i, { depositId, originChainId: sourceChain.chainId });
+            updateChainResult(i, { depositId, delivering: true });
+          } catch (e) {
+            updateChainResult(i, {
+              error: `Could not extract Across depositId: ${(e as Error).message}`,
+            });
+          }
         });
       });
 
-      await Promise.all(promises);
+      await Promise.all(inclusionPromises);
 
-      // For bridge legs, source-chain inclusion only confirms the LayerZero
-      // message was dispatched — not delivered. Poll the destination chain's
-      // recipient balance to confirm delivery before declaring success.
-      if (bridgeContribs.length > 0) {
+      if (legDeposits.size > 0) {
         setStep('delivering');
-        setChainResults((prev) =>
-          prev.map((r) =>
-            r.type === 'bridge' && r.txHash ? { ...r, delivering: true } : r,
-          ),
+        await Promise.all(
+          Array.from(legDeposits.entries()).map(async ([i, { depositId, originChainId }]) => {
+            const status = await waitForDeposit(originChainId, depositId);
+            updateChainResult(i, {
+              delivering: false,
+              delivered: status.status === 'filled',
+              expired: status.status === 'expired',
+              fillTxHash: status.fillTxHash,
+            });
+          }),
         );
-
-        const expectedBalance = recipientStartBalance + intent.totalAmount;
-        const finalBalance = await waitForDestinationBalance(
-          intent.destination,
-          intent.recipient,
-          expectedBalance,
-        );
-        const delivered = finalBalance >= expectedBalance;
-
-        setChainResults((prev) =>
-          prev.map((r) =>
-            r.type === 'bridge' && r.txHash
-              ? { ...r, delivering: false, delivered }
-              : r,
-          ),
-        );
-
-        if (!delivered) {
-          setError(
-            `Source transactions confirmed, but destination delivery did not arrive within 5 minutes. ` +
-            `LayerZero may still deliver — check ${intent.destination.chainName} later.`,
-          );
-        }
       }
 
       setStep('success');
@@ -369,7 +354,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       {step === 'resolving' && <p className="step-label">Quoting Across fees…</p>}
       {step === 'preparing' && <p className="step-label">Preparing multichain operations…</p>}
       {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
-      {step === 'delivering' && <p className="step-label">Source confirmed — waiting on LayerZero delivery to destination…</p>}
+      {step === 'delivering' && <p className="step-label">Source confirmed — waiting on Across relayer to fill destination…</p>}
 
       {(step === 'pending' || step === 'delivering' || step === 'success') && (
         <>
@@ -404,12 +389,13 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
               const isBridge = result.type === 'bridge';
               const isDelivering = isBridge && result.delivering;
               const isDelivered = isBridge && result.delivered;
-              const isSourceConfirmedOnly = isBridge && !!result.txHash && !result.delivering && !result.delivered;
+              const isExpired = isBridge && result.expired === true;
+              const isSourceConfirmedOnly = isBridge && !!result.txHash && !result.delivering && !result.delivered && !result.expired;
               const isLocalConfirmed = !isBridge && !!result.txHash;
               let statusClass = '';
               if (isPending || isDelivering) statusClass = 'pending';
               else if (isLocalConfirmed || isDelivered) statusClass = 'success';
-              else if (isError) statusClass = 'error';
+              else if (isError || isExpired) statusClass = 'error';
               else if (isSourceConfirmedOnly) statusClass = 'pending';
               return (
                 <div key={i} className="chain-status-card">
@@ -423,14 +409,24 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                     <span>
                       {isPending && 'Pending...'}
                       {isLocalConfirmed && 'Confirmed'}
-                      {isDelivering && 'Bridging to destination…'}
+                      {isDelivering && 'Across relayer filling destination…'}
                       {isDelivered && 'Delivered'}
-                      {isSourceConfirmedOnly && 'Source confirmed — delivery pending'}
+                      {isExpired && `Bridge expired — funds refundable on ${chain.chainName}`}
+                      {isSourceConfirmedOnly && 'Source confirmed — relayer fill pending'}
                       {isError && result.error}
                     </span>
                   </div>
                   {!!result.txHash && (
                     <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View source transaction ↗</a>
+                  )}
+                  {!!result.fillTxHash && (
+                    <a
+                      className="chain-track-link"
+                      target="_blank"
+                      href={`${destination.explorerUrl}/tx/${result.fillTxHash}`}
+                    >
+                      View fill on {destination.chainName} ↗
+                    </a>
                   )}
                 </div>
               );
