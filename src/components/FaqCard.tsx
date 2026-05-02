@@ -71,11 +71,12 @@ const faqItems = [
 		question: "What about stablecoin transfers?",
 		answer: (
 			<p>
-				Multichain stablecoin transfers work today using native bridges.
-				USDC moves cross-chain via Circle's CCTP bridge, and USDT via
-				LayerZero's USDT0 native bridge. With Unified Account, your user
-				can sign a single transaction that initiates bridge transfers
-				across multiple chains simultaneously.
+				Multichain stablecoin transfers work today using intent-based
+				bridges. This demo uses Across Protocol for USDT/USDC, where
+				a relayer fronts liquidity on the destination and is later
+				reimbursed on the source via UMA's optimistic oracle. With
+				Unified Account, your user signs once to initiate Across
+				deposits across multiple chains simultaneously.
 			</p>
 		),
 	},
