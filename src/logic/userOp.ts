@@ -1,15 +1,14 @@
 import { sign } from 'ox/WebAuthnP256';
-import { Hex as OxHex } from 'ox/Hex';
-import { Bytes, Hex } from 'ox';
+import { Hex } from 'ox';
 import {
   SafeMultiChainSigAccountV1 as SafeAccount,
   CandidePaymaster,
+  fromSafeWebauthn,
+  webauthnSignatureFromAssertion,
   type CandidePaymasterContext,
   type GasPaymasterUserOperationOverrides,
-  SignerSignaturePair,
-  WebauthnSignatureData,
-  SendUseroperationResponse,
-  UserOperationV9,
+  type SendUseroperationResponse,
+  type UserOperationV9,
 } from 'abstractionkit';
 
 import { PasskeyLocalStorageFormat } from './passkeys';
@@ -29,28 +28,28 @@ export type MultiChainSendResult =
   | { status: 'failed'; error: string };
 
 /**
- * Sign N UserOperations with one passkey authentication and submit them.
+ * Sign N UserOperations with one passkey assertion and submit them.
  *
- * Workflow:
- *   1. Paymaster commit  — gas estimation and dummy paymaster fields per op.
- *   2. Compute the challenge to sign (length-dependent — see note below).
- *   3. Single passkey biometric prompt over the challenge.
- *   4. Format per-op signatures.
- *   5. Paymaster finalize — seal real paymaster data after signing.
- *   6. Submit each op to its bundler concurrently.
+ *   1. Paymaster commit  — gas estimation + dummy paymaster fields per op.
+ *   2. signUserOperationsWithSigners — single passkey biometric prompt; the
+ *      SDK computes the merkle-root (or per-op SafeOp digest for length=1)
+ *      and emits the matching per-op signatures.
+ *   3. Paymaster finalize — seal real paymaster data after signing.
+ *   4. Submit each op to its bundler concurrently.
  *
- * Single-op vs multi-op signing
- * -----------------------------
- * The on-chain Safe 4337 module routes signature verification by depth byte.
- * For length === 1, the SDK's `formatSignaturesToUseroperationsSignatures`
- * still emits a multichain-formatted signature (depth byte 0x00, no merkle
- * proof), but the on-chain module treats depth=0 as the *normal* signature
- * flow — without the leading byte. So a length-1 multichain signature fails
- * verification with "Invalid UserOp signature or paymaster signature".
+ * The `fromSafeWebauthn` adapter handles signer-address routing (shared
+ * signer when isInit, per-owner verifier proxy after) and the Safe-specific
+ * WebAuthn signature encoding. `accountClass: SafeAccount` is mandatory: it
+ * sources the v0.2.1 Safe Passkey module defaults (Daimo P256 +
+ * RIP-7951 precompile) the on-chain owner is bound to. Omit it and the
+ * bundler rejects with a generic "Invalid UserOp signature" (GS026).
  *
- * Workaround: when length === 1, sign over the userOp's own EIP-712 hash
- * (not the merkle root) and emit a normal signature. For length >= 2, use
- * the merkle path as designed.
+ * Mixed init states across chains within a single batch (e.g. deployed on
+ * one chain, fresh on another) aren't supported here: the adapter is
+ * configured with one `isInit` value derived from the first op. In this app
+ * every batch shares an init state in practice — first-ever multichain op
+ * is init-on-all, every subsequent batch is non-init-on-all, and retries
+ * target a single chain at a time.
  */
 async function signAndSendMultiChainUserOps(
   ops: MultiChainUserOpInput[],
@@ -79,73 +78,33 @@ async function signAndSendMultiChainUserOps(
     ops[i].userOp = committedOp;
   });
 
-  // 2. Compute challenge. Length-dependent (see note above).
-  const challenge: string = ops.length === 1
-    ? SafeAccount.getUserOperationEip712Hash_V9(ops[0].userOp, ops[0].chainId)
-    : SafeAccount.getMultiChainSingleSignatureUserOperationsEip712Hash(
-      ops.map((op) => ({
-        userOperation: op.userOp,
-        chainId: op.chainId,
-        overrides: { isInit: op.userOp.nonce === 0n },
-      })),
-    );
-
-  // 3. Single passkey biometric prompt.
-  const { metadata, signature } = await sign({
-    challenge: challenge as OxHex,
-    credentialId: passkey.id as OxHex,
+  // 2. Sign every op with a single passkey assertion.
+  const signer = fromSafeWebauthn({
+    publicKey: passkey.pubkeyCoordinates,
+    isInit: ops[0].userOp.nonce === 0n,
+    accountClass: SafeAccount,
+    getAssertion: async (challenge) => {
+      // ox's `sign` takes an OxHex challenge; fromSafeWebauthn hands us a
+      // Uint8Array. Convert at the boundary.
+      const { metadata, signature } = await sign({
+        challenge: Hex.fromBytes(challenge),
+        credentialId: passkey.id as `0x${string}`,
+      });
+      return webauthnSignatureFromAssertion({
+        authenticatorData: metadata.authenticatorData,
+        clientDataJSON: metadata.clientDataJSON,
+        signature,
+      });
+    },
   });
 
-  // 4. Build the WebAuthn signature payload from the assertion.
-  const clientData = JSON.parse(metadata.clientDataJSON);
-  const { type: _type, challenge: _challenge, ...remainingFields } = clientData;
-  const fields = Object.entries(remainingFields)
-    .map(([key, value]) => `"${key}":${JSON.stringify(value)}`)
-    .join(',');
+  const signatures = await safeAccount.signUserOperationsWithSigners(
+    ops.map((op) => ({ userOperation: op.userOp, chainId: op.chainId })),
+    [signer],
+  );
+  ops.forEach((op, i) => { op.userOp.signature = signatures[i]; });
 
-  const webauthnSignatureData: WebauthnSignatureData = {
-    authenticatorData: Bytes.fromHex(metadata.authenticatorData).buffer as ArrayBuffer,
-    clientDataFields: Hex.fromString(fields),
-    rs: [signature.r, signature.s],
-  };
-  const webauthSignature = SafeAccount.createWebAuthnSignature(webauthnSignatureData);
-  const signerSignaturePair: SignerSignaturePair = {
-    signer: passkey.pubkeyCoordinates,
-    signature: webauthSignature,
-  };
-
-  // 5. Format per-op signatures (length-dependent path — see note above).
-  if (ops.length === 1) {
-    // Normal (non-multichain) signature: no leading depth byte.
-    ops[0].userOp.signature = SafeAccount.formatSignaturesToUseroperationSignature(
-      [signerSignaturePair],
-      {
-        isInit: ops[0].userOp.nonce === 0n,
-        // isMultiChainSignature omitted → defaults to false.
-        safe4337ModuleAddress: SafeAccount.DEFAULT_SAFE_4337_MODULE_ADDRESS,
-        eip7212WebAuthnPrecompileVerifier: SafeAccount.DEFAULT_WEB_AUTHN_PRECOMPILE,
-        eip7212WebAuthnContractVerifier: SafeAccount.DEFAULT_WEB_AUTHN_DAIMO_VERIFIER,
-        webAuthnSignerFactory: SafeAccount.DEFAULT_WEB_AUTHN_SIGNER_FACTORY,
-        webAuthnSignerSingleton: SafeAccount.DEFAULT_WEB_AUTHN_SIGNER_SINGLETON,
-        webAuthnSignerProxyCreationCode: SafeAccount.DEFAULT_WEB_AUTHN_SIGNER_PROXY_CREATION_CODE,
-        webAuthnSharedSigner: SafeAccount.DEFAULT_WEB_AUTHN_SHARED_SIGNER,
-      },
-    );
-  } else {
-    const signatures = SafeAccount.formatSignaturesToUseroperationsSignatures(
-      ops.map((op) => ({
-        userOperation: op.userOp,
-        chainId: op.chainId,
-        overrides: { isInit: op.userOp.nonce === 0n },
-      })),
-      [signerSignaturePair],
-    );
-    ops.forEach((op, i) => {
-      op.userOp.signature = signatures[i];
-    });
-  }
-
-  // 6. Paymaster finalize — seal real paymaster data now that signatures are set.
+  // 3. Paymaster finalize — seal real paymaster data now that signatures are set.
   const finalizeResults = await Promise.all(
     ops.map((op) => {
       const paymaster = new CandidePaymaster(op.paymasterUrl);
@@ -159,7 +118,7 @@ async function signAndSendMultiChainUserOps(
     ops[i].userOp = finalizedOp;
   });
 
-  // 7. Submit each op concurrently, collect per-op results.
+  // 4. Submit each op concurrently, collect per-op results.
   const results = await Promise.allSettled(
     ops.map((op) => {
       const sender = new SafeAccount(op.userOp.sender);

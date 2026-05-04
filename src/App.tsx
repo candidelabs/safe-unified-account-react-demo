@@ -1,13 +1,14 @@
 import safeLogo from "/safe-logo-white.svg";
 import candideLogo from "/candide-wordmark.svg";
 import {
-	PasskeyLocalStorageFormat,
+	PasskeyStoredFormat,
 	createPasskey,
 	toLocalStorageFormat,
+	hydratePasskey,
 } from "./logic/passkeys.ts";
 import "./App.css";
 import { useLocalStorageState } from "./hooks/useLocalStorageState.ts";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { PasskeyCard } from "./components/PasskeyCard.tsx";
 import { TransferCard } from "./components/TransferCard.tsx";
 import { AccountCard } from "./components/AccountCard.tsx";
@@ -18,11 +19,19 @@ import { FaqCard } from "./components/FaqCard.tsx";
 const PASSKEY_LOCALSTORAGE_KEY = "passkeyId";
 
 function App() {
-	const [passkey, setPasskey] = useLocalStorageState<
-		PasskeyLocalStorageFormat | undefined
+	const [storedPasskey, setPasskey] = useLocalStorageState<
+		PasskeyStoredFormat | undefined
 	>(PASSKEY_LOCALSTORAGE_KEY, undefined);
 	const [error, setError] = useState<string>();
 	const [view, setView] = useState<"main" | "settings">("main");
+
+	// JSON.parse leaves coords as hex strings; rehydrate to bigint once so
+	// every consumer (and `fromSafeWebauthn`'s strict type guard) sees the
+	// canonical shape.
+	const passkey = useMemo(
+		() => (storedPasskey ? hydratePasskey(storedPasskey) : undefined),
+		[storedPasskey],
+	);
 
 	const handleCreatePasskeyClick = async () => {
 		setError(undefined);

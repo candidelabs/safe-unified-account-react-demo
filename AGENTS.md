@@ -110,9 +110,16 @@ Two chain models — see `src/logic/chains.ts`:
 
 | Package | Purpose |
 |---------|---------|
-| `abstractionkit` (^0.2.41) | Safe Unified Account SDK — account management, multichain signing, paymaster, social recovery |
+| `abstractionkit` (`file:../abstractionkit`) | Safe Unified Account SDK — account management, multichain signing, paymaster, social recovery |
 | `ox` (^0.8.4) | WebAuthn P-256 credential creation and signing (`ox/WebAuthnP256`) |
 | `viem` (^2.31.7) | Random address generation (`generatePrivateKey` + `privateKeyToAddress` from `viem/accounts`); `encodeFunctionData` for SpokePool calldata |
+
+**`abstractionkit` is a sibling-directory live link.** The demo consumes the local SDK working tree at `../abstractionkit` rather than a published version. Two consequences:
+
+- The SDK repo must be checked out at `~/Documents/candide/abstractionkit` (or wherever the parent dir resolves to `..` from this repo) and on the **`refactor/multichain-helpers-symmetric`** branch (the active dev branch tracking unreleased helpers like `fromSafeWebauthn`, `signUserOperationsWithSigners`, `webauthnSignatureFromAssertion`, `pubkeyCoordinatesFromJson`, `classifyOwner`).
+- After changing SDK source, run `npm run build` in `../abstractionkit` so the demo picks up the rebuilt `dist/`. No `npm install` needed in the demo for SDK changes — `node_modules/abstractionkit` is symlinked-equivalent.
+
+To switch to a published version: change the manifest entry back to `"abstractionkit": "^X.Y.Z"` and `npm install`.
 
 The bridge layer is **Across Protocol** — consumed via REST API at `app.across.to/api` (mainnet) or `testnet.across.to/api` (testnet). There is no Across SDK dependency; all calldata is encoded against an inlined `SpokePool` ABI fragment in `logic/across.ts`.
 

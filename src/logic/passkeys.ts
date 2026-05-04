@@ -1,8 +1,12 @@
 import {
   createCredential,
   type P256Credential,
-} from 'ox/WebAuthnP256'
-
+} from 'ox/WebAuthnP256';
+import {
+  pubkeyCoordinatesFromJson,
+  pubkeyCoordinatesToJson,
+  type WebauthnPublicKey,
+} from 'abstractionkit';
 
 /**
  * Creates a WebAuthn P-256 credential for signing.
@@ -12,12 +16,12 @@ import {
  */
 async function createPasskey(): Promise<P256Credential> {
   // Generate a passkey credential using WebAuthn API
-  let passkeyCredential = await createCredential({
+  const passkeyCredential = await createCredential({
     name: 'Safe Wallet',
     challenge: crypto.getRandomValues(new Uint8Array(32)),
     rp: {
       id: window.location.hostname,
-      name: 'Safe Wallet'
+      name: 'Safe Wallet',
     },
     authenticatorSelection: {
       // Removed authenticatorAttachment to support both platform (Touch ID, Face ID)
@@ -27,37 +31,64 @@ async function createPasskey(): Promise<P256Credential> {
     },
     timeout: 60000,
     attestation: 'none',
-  })
+  });
 
   if (!passkeyCredential) {
-    throw new Error('Failed to generate passkey. Received null as a credential')
+    throw new Error('Failed to generate passkey. Received null as a credential');
   }
-  return passkeyCredential
-}
-
-export type PasskeyLocalStorageFormat = {
-  id: string
-  pubkeyCoordinates: {
-    x: bigint
-    y: bigint
-  }
+  return passkeyCredential;
 }
 
 /**
- * Converts a P256Credential into a format suitable for storing in localStorage.
- *
- * @param passkey - The P256Credential returned from WebAuthn.
- * @returns An object containing `id` and `pubkeyCoordinates` ready for JSON.stringify.
+ * Runtime shape consumed by every component: bigint pubkey coords, ready
+ * for `fromSafeWebauthn` and the rest of the SDK's strict-type boundaries.
  */
-function toLocalStorageFormat(passkey: P256Credential): PasskeyLocalStorageFormat {
+export type PasskeyLocalStorageFormat = {
+  id: string;
+  pubkeyCoordinates: WebauthnPublicKey;
+};
+
+/**
+ * On-disk shape. New writes use the string variant — pubkey coords are
+ * pre-serialized via the SDK's canonical helper (`{"x":"0x...","y":"0x..."}`).
+ * Legacy localStorage entries written before this change carry the object
+ * variant produced by `storage.ts`'s generic bigint replacer; both round-trip
+ * through `pubkeyCoordinatesFromJson` unchanged.
+ */
+export type PasskeyStoredFormat = {
+  id: string;
+  pubkeyCoordinates:
+    | string
+    | { x: bigint | string | number; y: bigint | string | number };
+};
+
+/**
+ * Convert a fresh `P256Credential` into the persisted shape. Pubkey coords
+ * go through `pubkeyCoordinatesToJson` so the on-disk encoding is whatever
+ * the SDK considers canonical.
+ */
+function toLocalStorageFormat(passkey: P256Credential): PasskeyStoredFormat {
   return {
     id: passkey.id,
-    pubkeyCoordinates: passkey.publicKey
-  }
+    pubkeyCoordinates: pubkeyCoordinatesToJson(passkey.publicKey),
+  };
 }
 
+/**
+ * Inverse of {@link toLocalStorageFormat}. Restores bigint coords via the
+ * SDK's `pubkeyCoordinatesFromJson` so every consumer downstream sees the
+ * canonical type — `fromSafeWebauthn` rejects non-bigint coords at its
+ * type guard.
+ */
+function hydratePasskey(stored: PasskeyStoredFormat): PasskeyLocalStorageFormat {
+  return {
+    id: stored.id,
+    pubkeyCoordinates: pubkeyCoordinatesFromJson(stored.pubkeyCoordinates),
+  };
+}
 
 export {
-	createPasskey,
-	toLocalStorageFormat,
+  createPasskey,
+  toLocalStorageFormat,
+  hydratePasskey,
 };

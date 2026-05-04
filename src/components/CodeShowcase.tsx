@@ -22,7 +22,7 @@ function CodeShowcase() {
 						{"account = SafeMultiChainSigAccountV1."}
 						<span className="code-fn">{"initializeNewAccount"}</span>
 						{"([pubkey]);\n\n"}
-						<span className="code-comment">{"// 2. Create user operations for each chain\n"}</span>
+						<span className="code-comment">{"// 2. Build a UserOperation per chain (expectedSigners → WebAuthn dummy sig for gas)\n"}</span>
 						<span className="code-keyword">{"let "}</span>
 						{"ops = "}
 						<span className="code-keyword">{"await "}</span>
@@ -32,64 +32,56 @@ function CodeShowcase() {
 						<span className="code-fn">{"map"}</span>
 						{"(chain => account."}
 						<span className="code-fn">{"createUserOperation"}</span>
-						{"(txs, chain))\n);\n\n"}
+						{"(txs, chain, "}
+						{"{ expectedSigners: [pubkey] }))\n);\n\n"}
 						<span className="code-comment">{"// 3. Paymaster commit — gas estimation + sponsorship fields\n"}</span>
-						<span className="code-keyword">{"const "}</span>
-						{"committed = "}
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
 						{"(ops."}
 						<span className="code-fn">{"map"}</span>
-						{"((op, i) =>\n  paymaster."}
+						{"(op => paymaster."}
 						<span className="code-fn">{"createSponsorPaymasterUserOperation"}</span>
-						{"(\n    account, op, bundler, "}
-						<span className="code-keyword">{"undefined"}</span>
-						{",\n    { context: { signingPhase: "}
+						{"(\n  account, op, bundler, undefined, { signingPhase: "}
 						<span className="code-string">{"\"commit\""}</span>
-						{" } }\n  )\n));\n"}
-						{"committed."}
-						<span className="code-fn">{"forEach"}</span>
-						{"(([op], i) => { ops[i] = op; });\n\n"}
-						<span className="code-comment">{"// 4. Compute multichain hash (Merkle root)\n"}</span>
+						{" })));\n\n"}
+						<span className="code-comment">{"// 4. One adapter handles signer routing + Safe-specific WebAuthn encoding\n"}</span>
 						<span className="code-keyword">{"const "}</span>
-						{"hash = SafeMultiChainSigAccountV1\n  ."}
-						<span className="code-fn">{"getMultiChainSingleSignatureUserOperationsEip712Hash"}</span>
-						{"(ops);\n\n"}
-						<span className="code-comment">{"// 5. Sign once with passkey — single biometric prompt\n"}</span>
-						<span className="code-keyword">{"const "}</span>
-						{"signature = "}
+						{"signer = "}
+						<span className="code-fn">{"fromSafeWebauthn"}</span>
+						{"({\n  publicKey: pubkey,\n  isInit: ops[0].nonce === 0n,\n  accountClass: SafeMultiChainSigAccountV1,\n  getAssertion: "}
+						<span className="code-keyword">{"async "}</span>
+						{"(challenge) => "}
+						<span className="code-fn">{"webauthnSignatureFromAssertion"}</span>
+						{"(\n    ("}
 						<span className="code-keyword">{"await "}</span>
-						{"WebAuthnP256."}
-						<span className="code-fn">{"sign"}</span>
-						{"({ challenge: hash });\n\n"}
-						<span className="code-comment">{"// 6. Expand to per-chain signatures (Merkle proofs)\n"}</span>
+						{"navigator.credentials."}
+						<span className="code-fn">{"get"}</span>
+						{"({ publicKey: { challenge, ... } })).response\n  ),\n});\n\n"}
+						<span className="code-comment">{"// 5. One passkey prompt → per-op signatures (merkle root or single-op SafeOp digest)\n"}</span>
 						<span className="code-keyword">{"const "}</span>
-						{"sigs = SafeMultiChainSigAccountV1\n  ."}
-						<span className="code-fn">{"formatSignaturesToUseroperationsSignatures"}</span>
-						{"(ops, [signature]);\n"}
+						{"sigs = "}
+						<span className="code-keyword">{"await "}</span>
+						{"account."}
+						<span className="code-fn">{"signUserOperationsWithSigners"}</span>
+						{"(\n  ops."}
+						<span className="code-fn">{"map"}</span>
+						{"((op, i) => ({ userOperation: op, chainId: chains[i].id })),\n  [signer],\n);\n"}
 						{"ops."}
 						<span className="code-fn">{"forEach"}</span>
 						{"((op, i) => { op.signature = sigs[i]; });\n\n"}
-						<span className="code-comment">{"// 7. Paymaster finalize — seal paymaster data after signing\n"}</span>
-						<span className="code-keyword">{"const "}</span>
-						{"finalized = "}
+						<span className="code-comment">{"// 6. Paymaster finalize — seal paymaster data after signing\n"}</span>
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
 						{"(ops."}
 						<span className="code-fn">{"map"}</span>
-						{"((op, i) =>\n  paymaster."}
+						{"(op => paymaster."}
 						<span className="code-fn">{"createSponsorPaymasterUserOperation"}</span>
-						{"(\n    account, op, bundler, "}
-						<span className="code-keyword">{"undefined"}</span>
-						{",\n    { context: { signingPhase: "}
+						{"(\n  account, op, bundler, undefined, { signingPhase: "}
 						<span className="code-string">{"\"finalize\""}</span>
-						{" } }\n  )\n));\n"}
-						{"finalized."}
-						<span className="code-fn">{"forEach"}</span>
-						{"(([op], i) => { ops[i] = op; });\n\n"}
-						<span className="code-comment">{"// 8. Send all UserOperations concurrently\n"}</span>
+						{" })));\n\n"}
+						<span className="code-comment">{"// 7. Submit every chain in parallel\n"}</span>
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
