@@ -14,6 +14,7 @@ const CHAIN_ICONS: Record<string, string> = {
   '999':      'https://icons.llamao.fi/icons/chains/rsz_hyperliquid.jpg',
   '1329':     'https://icons.llamao.fi/icons/chains/rsz_sei.jpg',
   '5000':     'https://icons.llamao.fi/icons/chains/rsz_mantle.jpg',
+  '8453':     'https://icons.llamao.fi/icons/chains/rsz_base.jpg',
   '9745':     'https://icons.llamao.fi/icons/chains/rsz_plasma.jpg',
   '42161':    'https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/arbitrum/info/logo.png',
   '57073':    'https://icons.llamao.fi/icons/chains/rsz_ink.jpg',
