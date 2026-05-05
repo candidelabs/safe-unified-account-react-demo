@@ -106,37 +106,62 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const isAmountValid = parsedAmount !== null && parsedAmount > 0n && parsedAmount <= unifiedBalance;
   const canSend = isValidRecipient && !isSelfTransfer && isAmountValid && step === 'idle';
 
-  // Set the amount input to the largest recipient amount such that the
-  // total input (after Across gross-up on any cross-chain legs) fits in
-  // unifiedBalance. For all-local splits totalFees = 0 ⇒ max = balance.
+  // Find the largest recipient amount such that the total input (after
+  // Across gross-up on any cross-chain legs) fits in unifiedBalance.
+  //
+  // Across fees aren't linear in amount — they have fixed minimums, so a
+  // single subtraction often undershoots. We iterate: quote → measure
+  // overshoot → shrink → re-quote, up to 3 passes. Once feasible, apply
+  // a small buffer to absorb fee jitter between MAX and Send (Across
+  // quotes can shift by a hair between calls).
   const handleMax = async () => {
     if (unifiedBalance === 0n) return;
     setMaxLoading(true);
     try {
-      const intent: TransferIntent = {
-        totalAmount: unifiedBalance,
-        // Across quoting doesn't validate the recipient against on-chain
-        // state — any well-formed address works. Fall back to the user's
-        // own account if the recipient field is empty.
-        recipient: (ADDRESS_REGEX.test(recipient.trim())
-          ? recipient.trim()
-          : accountAddress) as `0x${string}`,
-        destination,
-      };
-      const split = computeTransferSplit(accountChains, balances, intent);
-      const resolved = await resolveLegs(accountChains, balances, split, intent);
-      const totalFees = resolved.reduce(
-        (sum, leg) => sum + (leg.inputAmount - leg.outputAmount),
-        0n,
-      );
-      const maxRecipient = unifiedBalance > totalFees
-        ? unifiedBalance - totalFees
-        : 0n;
-      setAmountInput(formatToken(maxRecipient));
-    } catch {
-      // Quote failed (network, no route, etc.) — fall back to naive max.
-      // Send-time validation will surface any actual shortfall.
-      setAmountInput(formatToken(unifiedBalance));
+      const recipientAddr = (ADDRESS_REGEX.test(recipient.trim())
+        ? recipient.trim()
+        : accountAddress) as `0x${string}`;
+
+      let target = unifiedBalance;
+      let convergedToFeasible = false;
+
+      for (let i = 0; i < 3; i++) {
+        try {
+          const intent: TransferIntent = {
+            totalAmount: target,
+            recipient: recipientAddr,
+            destination,
+          };
+          const split = computeTransferSplit(accountChains, balances, intent);
+          const resolved = await resolveLegs(accountChains, balances, split, intent);
+          const totalInput = resolved.reduce((sum, leg) => sum + leg.inputAmount, 0n);
+          if (totalInput <= unifiedBalance) {
+            // Feasible. If any bridge legs, apply a 0.5% safety buffer
+            // for fee jitter; same-chain splits stay exact.
+            const hasBridge = resolved.some((l) => l.type === 'bridge');
+            if (hasBridge) {
+              target = (target * 995n) / 1000n;
+            }
+            convergedToFeasible = true;
+            break;
+          }
+          // Overshoot. Shrink by the excess plus a 10% margin so the
+          // next pass lands cleanly inside the balance.
+          const excess = totalInput - unifiedBalance;
+          target = target - excess - excess / 10n;
+        } catch {
+          // Quote / split failed (e.g. amount below Across minimum).
+          // Shrink by 5% and try again.
+          target = (target * 95n) / 100n;
+        }
+        if (target <= 0n) break;
+      }
+
+      // If we never converged, fall back to a conservative 95% of balance.
+      const finalTarget = convergedToFeasible && target > 0n
+        ? target
+        : (unifiedBalance * 95n) / 100n;
+      setAmountInput(formatToken(finalTarget));
     } finally {
       setMaxLoading(false);
     }
