@@ -1468,12 +1468,24 @@
   text-align: left;
 }
 
-.receive-token-label {
-  font-size: 0.72rem;
+.receive-header {
+  margin-bottom: 1rem;
+}
+
+.receive-eyebrow {
+  font-size: 0.7rem;
   color: var(--text-tertiary);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-bottom: 0.85rem;
+  letter-spacing: 0.1em;
+}
+
+.receive-token {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-top: 0.2rem;
+  line-height: 1.1;
 }
 
 .receive-grid {
@@ -1489,10 +1501,9 @@
   height: 120px;
   background: #fff;
   border-radius: var(--radius-md);
-  padding: 8px;
-  box-sizing: border-box;
   display: grid;
   place-items: center;
+  overflow: hidden;
 }
 
 .receive-right {
@@ -1556,20 +1567,6 @@
   font-size: 0.82rem;
   color: var(--text-tertiary);
   line-height: 1.5;
-}
-
-.receive-warning {
-  display: flex;
-  gap: 0.5rem;
-  align-items: flex-start;
-  padding: 0.65rem 0.8rem;
-  background: rgba(245, 181, 107, 0.08);
-  border: 1px solid rgba(245, 181, 107, 0.25);
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-  line-height: 1.5;
-  margin-bottom: 0.5rem;
 }
 
 .receive-faucet {

@@ -39,7 +39,10 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
 
   return (
     <div className="receive-view">
-      <div className="receive-token-label">Receive {tokenSymbol}</div>
+      <div className="receive-header">
+        <div className="receive-eyebrow">Receive</div>
+        <div className="receive-token">{tokenSymbol}</div>
+      </div>
       <div className="receive-grid">
         <div className="receive-qr-wrap">
           <QRCodeSVG
@@ -48,6 +51,7 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
             bgColor="#ffffff"
             fgColor="#000000"
             level="M"
+            marginSize={2}
           />
         </div>
         <div className="receive-right">
@@ -74,11 +78,6 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
             However the sender pays, it lands in your unified balance.
           </p>
         </div>
-      </div>
-
-      <div className="receive-warning">
-        <span aria-hidden="true">⚠</span>
-        <span>Only send {tokenSymbol} on these chains. Other tokens or chains will be lost.</span>
       </div>
 
       {faucetChains.length > 0 && (
