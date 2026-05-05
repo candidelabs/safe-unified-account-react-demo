@@ -17,6 +17,7 @@ import {
   type TransferIntent,
 } from '../logic/transfer';
 import { extractDepositIdFromLogs, waitForDeposit } from '../logic/across';
+import { ReceiveView } from './ReceiveView';
 
 type Step = 'idle' | 'resolving' | 'confirm' | 'preparing' | 'signing' | 'pending' | 'delivering' | 'success';
 
@@ -65,9 +66,13 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [legs, setLegs] = useState<ResolvedLeg[]>([]);
   const [chainResults, setChainResults] = useState<ChainResult[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
+  const [manualTab, setManualTab] = useState<'send' | 'receive' | null>(null);
 
   const accountAddress = getItem('accountAddress') as `0x${string}`;
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
+  // Auto-default: zero balance ⇒ Receive (the new-user path), funded ⇒ Send.
+  // Once the user clicks a tab, manualTab takes over until handleReset clears it.
+  const tab: 'send' | 'receive' = manualTab ?? (unifiedBalance === 0n ? 'receive' : 'send');
   const parsedAmount = parseToken(amountInput);
   const destination = destinationChains[destChainIndex];
 
@@ -262,11 +267,35 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
     setAmountInput('');
     setRecipient('');
     setError(undefined);
+    setManualTab(null);
   };
 
   return (
     <div className="card action-card">
-      {(step === 'idle' || step === 'confirm') && (
+      {step === 'idle' && (
+        <div className="tab-bar">
+          <button
+            type="button"
+            className={`tab-button ${tab === 'send' ? 'tab-active' : ''}`}
+            onClick={() => setManualTab('send')}
+          >
+            Send
+          </button>
+          <button
+            type="button"
+            className={`tab-button ${tab === 'receive' ? 'tab-active' : ''}`}
+            onClick={() => setManualTab('receive')}
+          >
+            Receive
+          </button>
+        </div>
+      )}
+
+      {step === 'idle' && tab === 'receive' && accountAddress && (
+        <ReceiveView accountAddress={accountAddress} />
+      )}
+
+      {((step === 'idle' && tab === 'send') || step === 'confirm') && (
         <div className="unified-balance">
           <div className="balance-label">Unified {tokenSymbol} Balance</div>
           <div className="balance-amount">
@@ -290,7 +319,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         </div>
       )}
 
-      {step === 'idle' && accountAddress && (
+      {step === 'idle' && tab === 'send' && accountAddress && (
         <div className="transfer-form">
           <div className="form-field">
             <label className="form-label">Recipient</label>
@@ -302,7 +331,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             <input type="text" className="address-input" placeholder="0.00" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
           </div>
           <div className="form-field">
-            <label className="form-label">Destination Chain</label>
+            <label className="form-label">Recipient Chain</label>
             <div className="chain-selector">
               {destinationChains.map((chain, i) => (
                 <button key={i} className={`chain-option ${destChainIndex === i ? 'chain-option-active' : ''}`} onClick={() => setDestChainIndex(i)}>
