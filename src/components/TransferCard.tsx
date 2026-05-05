@@ -423,9 +423,9 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                   className="amount-max-button"
                   onClick={handleMax}
                   disabled={maxLoading}
-                  title="Use full balance (after bridge fees)"
+                  title={maxLoading ? 'Calculating bridge fees…' : 'Use full balance (after bridge fees)'}
                 >
-                  {maxLoading ? '…' : 'MAX'}
+                  {maxLoading ? '•••' : 'MAX'}
                 </button>
               )}
             </div>

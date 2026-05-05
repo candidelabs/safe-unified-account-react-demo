@@ -1802,9 +1802,20 @@
   transition: background 0.15s, border-color 0.15s;
 }
 
-.amount-max-button:hover {
+.amount-max-button:hover:not(:disabled) {
   background: var(--accent-muted, var(--accent-surface));
   border-color: var(--accent);
+}
+
+.amount-max-button:disabled {
+  opacity: 0.55;
+  cursor: progress;
+  animation: max-button-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes max-button-pulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.85; }
 }
 
 .amount-fiat-estimate {
