@@ -83,6 +83,7 @@ Two chain models — see `src/logic/chains.ts`:
 | `VITE_CHAIN{N}_VERIFICATION_GAS_LIMIT_MULTIPLIER` | No | Integer % bump on `verificationGasLimit` (e.g. `50` = +50% / 1.5x). Set on chains where the paymaster's default +10% bump is too low for WebAuthn P-256 signature verification (AA26 errors) |
 | `VITE_CHAIN{N}_NAME` | No | Human-readable name for UI |
 | `VITE_CHAIN{N}_EXPLORER_URL` | No | Block explorer base URL |
+| `VITE_CHAIN{N}_FAUCET_URL` | No | Public-faucet URL for this chain's bridged token. When set, the Receive tab renders a one-tap "Get test {symbol} on {chain}" link that copies the account address to clipboard and opens this URL. Use Circle's faucet at `https://faucet.circle.com` for testnet USDC. Omit on mainnet. |
 
 ### Destination-only chains: `VITE_DEST_CHAIN{N}_*`
 
