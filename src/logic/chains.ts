@@ -25,6 +25,10 @@ export interface AccountChainConfig extends DestinationChainConfig {
   sponsorshipPolicyId?: string;
   preVerificationGasMultiplier?: number;
   verificationGasLimitMultiplier?: number;
+  // Optional public-faucet URL for this chain's bridged token. When set,
+  // the Receive tab renders a one-tap link that copies the account
+  // address to clipboard and opens this URL in a new tab. Omit on mainnet.
+  faucetUrl?: string;
 }
 
 function parseDecimals(raw: string | undefined): number {
@@ -67,6 +71,7 @@ function loadAccountChains(): AccountChainConfig[] {
       token: import.meta.env[`VITE_CHAIN${n}_TOKEN`] as string,
       tokenDecimals: parseDecimals(import.meta.env[`VITE_CHAIN${n}_TOKEN_DECIMALS`] as string | undefined),
       spokePoolAddress: import.meta.env[`VITE_CHAIN${n}_SPOKE_POOL`] as string,
+      faucetUrl: (import.meta.env[`VITE_CHAIN${n}_FAUCET_URL`] as string | undefined) || undefined,
     });
   }
 
