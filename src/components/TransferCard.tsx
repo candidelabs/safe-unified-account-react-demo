@@ -74,6 +74,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [chainResults, setChainResults] = useState<ChainResult[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [manualTab, setManualTab] = useState<'send' | 'receive' | null>(null);
+  const [maxLoading, setMaxLoading] = useState(false);
 
   const accountAddress = getItem('accountAddress') as `0x${string}`;
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
@@ -104,6 +105,42 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const isSelfTransfer = recipient.trim().toLowerCase() === accountAddress?.toLowerCase();
   const isAmountValid = parsedAmount !== null && parsedAmount > 0n && parsedAmount <= unifiedBalance;
   const canSend = isValidRecipient && !isSelfTransfer && isAmountValid && step === 'idle';
+
+  // Set the amount input to the largest recipient amount such that the
+  // total input (after Across gross-up on any cross-chain legs) fits in
+  // unifiedBalance. For all-local splits totalFees = 0 ⇒ max = balance.
+  const handleMax = async () => {
+    if (unifiedBalance === 0n) return;
+    setMaxLoading(true);
+    try {
+      const intent: TransferIntent = {
+        totalAmount: unifiedBalance,
+        // Across quoting doesn't validate the recipient against on-chain
+        // state — any well-formed address works. Fall back to the user's
+        // own account if the recipient field is empty.
+        recipient: (ADDRESS_REGEX.test(recipient.trim())
+          ? recipient.trim()
+          : accountAddress) as `0x${string}`,
+        destination,
+      };
+      const split = computeTransferSplit(accountChains, balances, intent);
+      const resolved = await resolveLegs(accountChains, balances, split, intent);
+      const totalFees = resolved.reduce(
+        (sum, leg) => sum + (leg.inputAmount - leg.outputAmount),
+        0n,
+      );
+      const maxRecipient = unifiedBalance > totalFees
+        ? unifiedBalance - totalFees
+        : 0n;
+      setAmountInput(formatToken(maxRecipient));
+    } catch {
+      // Quote failed (network, no route, etc.) — fall back to naive max.
+      // Send-time validation will surface any actual shortfall.
+      setAmountInput(formatToken(unifiedBalance));
+    } finally {
+      setMaxLoading(false);
+    }
+  };
 
   const handleSend = async () => {
     if (!parsedAmount) return;
@@ -359,10 +396,11 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                 <button
                   type="button"
                   className="amount-max-button"
-                  onClick={() => setAmountInput(formatToken(unifiedBalance))}
-                  title="Use full balance"
+                  onClick={handleMax}
+                  disabled={maxLoading}
+                  title="Use full balance (after bridge fees)"
                 >
-                  MAX
+                  {maxLoading ? '…' : 'MAX'}
                 </button>
               )}
             </div>
