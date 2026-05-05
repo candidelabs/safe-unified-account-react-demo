@@ -445,21 +445,21 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                     <ChainIcon chainId={chain.chainId} />
                     {chain.chainName}
                   </strong>
-                  <span className="chain-action-type">{result.type === 'local-transfer' ? 'Transfer' : 'Bridge'}</span>
+                  <span className="action-chip">{result.type === 'local-transfer' ? 'Direct' : 'Cross-chain'}</span>
                   <div className="chain-status-row">
                     <span className={`status-dot ${statusClass}`} />
                     <span>
-                      {isPending && 'Pending...'}
-                      {isLocalConfirmed && 'Confirmed'}
-                      {isDelivering && 'Across relayer filling destination…'}
-                      {isDelivered && 'Delivered'}
-                      {isExpired && `Bridge expired — funds refundable on ${chain.chainName}`}
-                      {isSourceConfirmedOnly && 'Source confirmed — relayer fill pending'}
+                      {isPending && 'Sending…'}
+                      {isLocalConfirmed && 'Arrived'}
+                      {isDelivering && `Delivering to ${destination.chainName}…`}
+                      {isDelivered && 'Arrived'}
+                      {isExpired && `Couldn't deliver — funds returned to ${chain.chainName}`}
+                      {isSourceConfirmedOnly && 'Sent'}
                       {isError && result.error}
                     </span>
                   </div>
                   {!!result.txHash && (
-                    <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View source transaction ↗</a>
+                    <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View on {chain.chainName} ↗</a>
                   )}
                   {!!result.fillTxHash && (
                     <a
@@ -467,7 +467,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                       target="_blank"
                       href={`${destination.explorerUrl}/tx/${result.fillTxHash}`}
                     >
-                      View fill on {destination.chainName} ↗
+                      View on {destination.chainName} ↗
                     </a>
                   )}
                 </div>
