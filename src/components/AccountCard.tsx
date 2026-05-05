@@ -685,9 +685,7 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		: "";
 
 	const handleAdd = activeTab === "signers" ? handleAddSigner : handleAddGuardian;
-	const addLabel = activeTab === "signers"
-		? "Add Signer Across All Chains"
-		: "Add Recovery Guardian Across All Chains";
+	const addLabel = activeTab === "signers" ? "Add signer" : "Add guardian";
 
 	const renderAddressInput = () => (
 		<div className="address-input-section">
