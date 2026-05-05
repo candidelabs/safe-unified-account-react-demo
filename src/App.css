@@ -1462,6 +1462,73 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ===== Identity strip ===== */
+
+.identity-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 0.4rem 0.55rem 0.4rem 0.5rem;
+  margin: 0 auto 1.5rem;
+  max-width: 420px;
+}
+
+.identity-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #E70073, #E8212E);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  font-size: 0.7rem;
+  flex-shrink: 0;
+}
+
+.identity-address {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  background: transparent;
+  border: 0;
+  padding: 0.25rem 0.5rem;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.86rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+
+.identity-address:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.identity-address-copy {
+  font-family: inherit;
+  font-size: 0.72rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.identity-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-default);
+  flex-shrink: 0;
+}
+
+.settings-button.identity-settings {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+}
+
 /* ===== Receive view ===== */
 
 .receive-view {

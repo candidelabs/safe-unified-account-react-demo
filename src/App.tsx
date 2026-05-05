@@ -10,6 +10,7 @@ import "./App.css";
 import { useLocalStorageState } from "./hooks/useLocalStorageState.ts";
 import { useState, useEffect, useMemo } from "react";
 import { PasskeyCard } from "./components/PasskeyCard.tsx";
+import { IdentityStrip } from "./components/IdentityStrip.tsx";
 import { TransferCard } from "./components/TransferCard.tsx";
 import { AccountCard } from "./components/AccountCard.tsx";
 import { CodeShowcase } from "./components/CodeShowcase.tsx";
@@ -78,23 +79,27 @@ function App() {
 				</p>
 			</div>
 
-			{(!passkey || view === "main") && (
+			{!passkey && (
 				<div className="view-main" key="view-main">
-					<PasskeyCard
+					<PasskeyCard handleCreatePasskeyClick={handleCreatePasskeyClick} />
+				</div>
+			)}
+
+			{passkey && view === "main" && (
+				<div className="view-main" key="view-main">
+					<IdentityStrip
 						passkey={passkey}
-						handleCreatePasskeyClick={handleCreatePasskeyClick}
-						onOpenSettings={passkey ? () => setView("settings") : undefined}
+						onOpenSettings={() => setView("settings")}
 						settingsActive={false}
 					/>
-					{passkey && <TransferCard passkey={passkey} />}
+					<TransferCard passkey={passkey} />
 				</div>
 			)}
 
 			{passkey && view === "settings" && (
 				<div className="view-settings" key="view-settings">
-					<PasskeyCard
+					<IdentityStrip
 						passkey={passkey}
-						handleCreatePasskeyClick={handleCreatePasskeyClick}
 						onOpenSettings={() => setView("main")}
 						settingsActive={true}
 					/>
