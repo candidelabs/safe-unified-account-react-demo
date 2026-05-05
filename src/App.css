@@ -9,7 +9,7 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 3rem;
@@ -1762,15 +1762,8 @@
   color: var(--text-tertiary);
 }
 
-.site-footer a {
-  color: var(--text-tertiary);
-  text-decoration: none;
+.site-footer span {
   letter-spacing: 0.02em;
-  transition: color 0.2s;
-}
-
-.site-footer a:hover {
-  color: var(--text-secondary);
 }
 
 /* ===== Success banner — big-tick hero ===== */

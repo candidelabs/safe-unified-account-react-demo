@@ -114,9 +114,7 @@ function App() {
 			<CtaCard />
 			<FaqCard />
 			<footer className="site-footer">
-				<a href="https://safe.global" target="_blank" rel="noopener noreferrer">
-					Built on Safe Smart Accounts ↗
-				</a>
+				<span>Built on Safe Smart Accounts</span>
 			</footer>
 		</>
 	);
