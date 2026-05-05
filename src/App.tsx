@@ -1,4 +1,3 @@
-import safeLogo from "/safe-logo-white.svg";
 import candideLogo from "/candide-wordmark.svg";
 import {
 	PasskeyStoredFormat,
@@ -65,9 +64,6 @@ function App() {
 				<a href="https://candide.dev" target="_blank" rel="noopener noreferrer">
 					<img src={candideLogo} className="logo" alt="Candide Atelier logo" />
 				</a>
-				<a href="https://safe.global" target="_blank" rel="noopener noreferrer">
-					<img src={safeLogo} className="logo" alt="Safe logo" />
-				</a>
 			</header>
 			<div className="hero">
 				<h1>Send dollars across any chain.</h1>
@@ -117,6 +113,11 @@ function App() {
 			<CodeShowcase />
 			<CtaCard />
 			<FaqCard />
+			<footer className="site-footer">
+				<a href="https://safe.global" target="_blank" rel="noopener noreferrer">
+					Built on Safe Smart Accounts ↗
+				</a>
+			</footer>
 		</>
 	);
 }

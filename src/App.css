@@ -9,7 +9,7 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   padding-bottom: 1.5rem;
   border-bottom: 1px solid var(--border-subtle);
   margin-bottom: 3rem;
@@ -1749,6 +1749,28 @@
   font-weight: 500;
   vertical-align: middle;
   letter-spacing: 0.02em;
+}
+
+/* ===== Site footer ===== */
+
+.site-footer {
+  text-align: center;
+  margin-top: 4rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+}
+
+.site-footer a {
+  color: var(--text-tertiary);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  transition: color 0.2s;
+}
+
+.site-footer a:hover {
+  color: var(--text-secondary);
 }
 
 /* ===== Success banner — big-tick hero ===== */
