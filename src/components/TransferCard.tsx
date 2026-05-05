@@ -392,10 +392,10 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         </div>
       )}
 
-      {step === 'resolving' && <p className="step-label">Quoting Across fees…</p>}
-      {step === 'preparing' && <p className="step-label">Preparing multichain operations…</p>}
+      {step === 'resolving' && <p className="step-label">Quoting fees…</p>}
+      {step === 'preparing' && <p className="step-label">Preparing transfer…</p>}
       {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
-      {step === 'delivering' && <p className="step-label">Source confirmed — waiting on Across relayer to fill destination…</p>}
+      {step === 'delivering' && <p className="step-label">Sent — delivering to {destination.chainName}…</p>}
 
       {(step === 'pending' || step === 'delivering' || step === 'success') && (
         <>
