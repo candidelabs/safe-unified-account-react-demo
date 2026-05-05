@@ -1734,3 +1734,19 @@
 .send-empty-link:hover {
   background: var(--accent-surface);
 }
+
+/* ===== Action chip (Direct / Cross-chain) ===== */
+
+.action-chip {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  vertical-align: middle;
+  letter-spacing: 0.02em;
+}

@@ -361,7 +361,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       {step === 'confirm' && (
         <div className="confirm-breakdown">
-          <h3>Transaction Breakdown</h3>
+          <h3>Review</h3>
           <p className="confirm-summary">
             Sending {formatToken(parsedAmount!)} {tokenSymbol} to{' '}
             <code>{recipient.slice(0, 8)}...{recipient.slice(-6)}</code> on{' '}
@@ -375,15 +375,16 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                   {accountChains[leg.chainIndex].chainName}
                 </span>
                 <span className="confirm-action">
-                  {leg.type === 'local-transfer'
-                    ? `Transfer ${formatToken(leg.outputAmount)} ${tokenSymbol}`
-                    : `Bridge ${formatToken(leg.outputAmount)} ${tokenSymbol} → ${destination.chainName}`}
+                  {formatToken(leg.outputAmount)} {tokenSymbol}
+                  <span className="action-chip">
+                    {leg.type === 'local-transfer' ? 'Direct' : 'Cross-chain'}
+                  </span>
                 </span>
               </div>
             ))}
           </div>
           {legs.some((l) => l.type === 'bridge') && (
-            <p className="confirm-note">Bridged funds arrive at the recipient in seconds via Across.</p>
+            <p className="confirm-note">Cross-chain legs deliver in seconds.</p>
           )}
           <div className="confirm-actions">
             <button className="primary-button" onClick={handleConfirm}>Confirm &amp; Sign</button>
