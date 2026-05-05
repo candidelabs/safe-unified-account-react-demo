@@ -8,6 +8,7 @@ import { signAndSendMultiChainUserOps } from '../logic/userOp';
 import { getItem } from '../logic/storage';
 import { accountChains, destinationChains, tokenSymbol } from '../logic/chains';
 import { ChainIcon } from './ChainIcon';
+import { TokenIcon } from './TokenIcon';
 import {
   readAllBalances,
   computeTransferSplit,
@@ -304,7 +305,11 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       {((step === 'idle' && tab === 'send') || step === 'confirm') && (
         <div className="unified-balance">
-          <div className="balance-label">Unified {tokenSymbol} Balance</div>
+          <div className="balance-label">Unified balance</div>
+          <div className="balance-token-row">
+            <TokenIcon symbol={tokenSymbol} size={28} />
+            <span className="balance-token-symbol">{tokenSymbol}</span>
+          </div>
           <div className="balance-amount">
             {loadingBalances ? '...' : formatToken(unifiedBalance)}
           </div>
