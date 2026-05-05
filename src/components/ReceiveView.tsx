@@ -3,6 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 
 import { accountChains, tokenSymbol } from '../logic/chains';
 import { ChainIcon } from './ChainIcon';
+import { TokenIcon } from './TokenIcon';
 
 interface ReceiveViewProps {
   accountAddress: `0x${string}`;
@@ -41,7 +42,10 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
     <div className="receive-view">
       <div className="receive-header">
         <div className="receive-eyebrow">Receive</div>
-        <div className="receive-token">{tokenSymbol}</div>
+        <div className="receive-token-row">
+          <TokenIcon symbol={tokenSymbol} size={28} />
+          <span className="receive-token">{tokenSymbol}</span>
+        </div>
       </div>
       <div className="receive-grid">
         <div className="receive-qr-wrap">

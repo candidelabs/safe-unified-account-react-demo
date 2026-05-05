@@ -1479,13 +1479,25 @@
   letter-spacing: 0.1em;
 }
 
+.receive-token-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
 .receive-token {
   font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-primary);
-  margin-top: 0.2rem;
   line-height: 1.1;
+}
+
+.token-icon {
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 .receive-grid {
