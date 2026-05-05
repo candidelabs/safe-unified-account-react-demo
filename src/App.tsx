@@ -70,12 +70,9 @@ function App() {
 				</a>
 			</header>
 			<div className="hero">
-				<span className="demo-badge">Live Demo</span>
-				<h1>Safe Unified Account</h1>
+				<h1>Send dollars across any chain.</h1>
 				<p className="subtitle">
-					A single USDT balance across Arbitrum, Optimism, and more.
-					<br />
-					One passkey. One signature. Transfer across every chain.
+					One passkey. One signature. Settle to your recipient on whichever chain they prefer.
 				</p>
 			</div>
 
