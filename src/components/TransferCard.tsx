@@ -45,6 +45,13 @@ function formatToken(amount: bigint): string {
   return fracStr ? `${whole}.${fracStr}` : whole.toString();
 }
 
+// Both USDC and USDT are 1:1 USD pegs in this demo. Truncate to 2 decimals.
+function formatFiat(amount: bigint): string {
+  const dollars = amount / 10n ** BigInt(TOKEN_DECIMALS);
+  const cents = (amount % 10n ** BigInt(TOKEN_DECIMALS)) / 10n ** BigInt(TOKEN_DECIMALS - 2);
+  return `${dollars}.${cents.toString().padStart(2, '0')}`;
+}
+
 function parseToken(input: string): bigint | null {
   const trimmed = input.trim();
   if (!trimmed || !/^\d+(\.\d{0,6})?$/.test(trimmed)) return null;
@@ -340,7 +347,26 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
           </div>
           <div className="form-field">
             <label className="form-label">Amount ({tokenSymbol})</label>
-            <input type="text" className="address-input" placeholder="0.00" value={amountInput} onChange={(e) => setAmountInput(e.target.value)} />
+            <div className="amount-input-wrap">
+              <input
+                type="text"
+                className="address-input amount-input"
+                placeholder="0.00"
+                value={amountInput}
+                onChange={(e) => setAmountInput(e.target.value)}
+              />
+              {unifiedBalance > 0n && (
+                <button
+                  type="button"
+                  className="amount-max-button"
+                  onClick={() => setAmountInput(formatToken(unifiedBalance))}
+                  title="Use full balance"
+                >
+                  MAX
+                </button>
+              )}
+            </div>
+            <span className="amount-fiat-estimate">≈ ${formatFiat(parsedAmount ?? 0n)}</span>
           </div>
           <div className="form-field">
             <label className="form-label">Recipient Chain</label>

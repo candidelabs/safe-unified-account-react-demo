@@ -1775,6 +1775,46 @@
   }
 }
 
+/* ===== Amount input — MAX button + fiat estimate ===== */
+
+.amount-input-wrap {
+  position: relative;
+}
+
+.amount-input {
+  padding-right: 4.5rem;
+}
+
+.amount-max-button {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--accent-surface);
+  color: var(--accent);
+  border: 1px solid var(--accent-subtle);
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.amount-max-button:hover {
+  background: var(--accent-muted, var(--accent-surface));
+  border-color: var(--accent);
+}
+
+.amount-fiat-estimate {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+  letter-spacing: 0.01em;
+}
+
 /* ===== Send empty state ===== */
 
 .send-empty-state {
