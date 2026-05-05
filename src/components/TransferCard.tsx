@@ -407,19 +407,31 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             const hasUndeliveredBridge = chainResults.some(
               (r) => r.type === 'bridge' && !!r.txHash && r.delivered === false,
             );
-            const chainCountLabel = `${chainResults.length} chain${chainResults.length > 1 ? 's' : ''}`;
-            const bannerClass = hasFailure ? 'success-banner failure-banner' : 'success-banner';
-            let message: string;
+            const truncatedRecipient = `${recipient.slice(0, 8)}...${recipient.slice(-6)}`;
+
             if (hasFailure) {
-              message = `Some operations failed across ${chainCountLabel} — see per-chain status below.`;
-            } else if (hasUndeliveredBridge) {
-              message = `Source transactions confirmed across ${chainCountLabel} with a single signature. Bridge delivery still in progress.`;
-            } else {
-              message = `Sent ${formatToken(parsedAmount!)} ${tokenSymbol} across ${chainCountLabel} with a single signature`;
+              return (
+                <div className="success-banner failure-banner">
+                  <p>Couldn't send on every chain — see details below.</p>
+                </div>
+              );
             }
+
+            if (hasUndeliveredBridge) {
+              return (
+                <div className="success-banner">
+                  <div className="success-banner-headline">Sent ✓</div>
+                  <p className="success-banner-subline">Delivering to {destination.chainName}…</p>
+                </div>
+              );
+            }
+
             return (
-              <div className={bannerClass}>
-                <p>{message}</p>
+              <div className="success-banner">
+                <div className="success-banner-headline">Sent ✓</div>
+                <p className="success-banner-subline">
+                  {formatToken(parsedAmount!)} {tokenSymbol} to <code>{truncatedRecipient}</code> on {destination.chainName}
+                </p>
               </div>
             );
           })()}
