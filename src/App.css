@@ -1703,3 +1703,34 @@
     width: 100%;
   }
 }
+
+/* ===== Send empty state ===== */
+
+.send-empty-state {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  text-align: center;
+  margin-bottom: 1.25rem;
+}
+
+.send-empty-state p {
+  margin: 0 0 0.5rem;
+  color: var(--text-secondary);
+  font-size: 0.92rem;
+}
+
+.send-empty-link {
+  background: transparent;
+  border: 0;
+  color: var(--accent);
+  font-size: 0.88rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+}
+
+.send-empty-link:hover {
+  background: var(--accent-surface);
+}

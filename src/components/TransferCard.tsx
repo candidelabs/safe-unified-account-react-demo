@@ -321,6 +321,18 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       {step === 'idle' && tab === 'send' && accountAddress && (
         <div className="transfer-form">
+          {unifiedBalance === 0n && (
+            <div className="send-empty-state">
+              <p>No balance yet.</p>
+              <button
+                type="button"
+                className="send-empty-link"
+                onClick={() => setManualTab('receive')}
+              >
+                Switch to Receive →
+              </button>
+            </div>
+          )}
           <div className="form-field">
             <label className="form-label">Recipient</label>
             <input type="text" className="address-input" placeholder="0x..." value={recipient} onChange={(e) => setRecipient(e.target.value)} />
