@@ -107,13 +107,14 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const canSend = isValidRecipient && !isSelfTransfer && isAmountValid && step === 'idle';
 
   // Find the largest recipient amount such that the total input (after
-  // Across gross-up on any cross-chain legs) fits in unifiedBalance.
+  // Across gross-up on cross-chain legs) fits in unifiedBalance.
   //
-  // Across fees aren't linear in amount — they have fixed minimums, so a
-  // single subtraction often undershoots. We iterate: quote → measure
-  // overshoot → shrink → re-quote, up to 3 passes. Once feasible, apply
-  // a small buffer to absorb fee jitter between MAX and Send (Across
-  // quotes can shift by a hair between calls).
+  // resolveLegs throws "Insufficient unified balance after Across fees"
+  // when the request can't fit — fees are non-linear in amount (Across
+  // has fixed minimums), so we probe downward: try a target, on throw
+  // shrink by 8%, retry. We track the largest target that succeeded.
+  // Apply a 1% buffer on success to absorb fee jitter between MAX and
+  // the actual Send (Across quotes can shift between calls).
   const handleMax = async () => {
     if (unifiedBalance === 0n) return;
     setMaxLoading(true);
@@ -123,9 +124,12 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         : accountAddress) as `0x${string}`;
 
       let target = unifiedBalance;
-      let convergedToFeasible = false;
+      let lastFeasible: bigint | null = null;
+      let hasBridge = false;
 
-      for (let i = 0; i < 3; i++) {
+      // Up to 6 passes: 0.92^6 ≈ 0.61 (down to 61% of balance) covers
+      // even high-fee testnet scenarios with small amounts.
+      for (let i = 0; i < 6; i++) {
         try {
           const intent: TransferIntent = {
             totalAmount: target,
@@ -134,33 +138,29 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
           };
           const split = computeTransferSplit(accountChains, balances, intent);
           const resolved = await resolveLegs(accountChains, balances, split, intent);
-          const totalInput = resolved.reduce((sum, leg) => sum + leg.inputAmount, 0n);
-          if (totalInput <= unifiedBalance) {
-            // Feasible. If any bridge legs, apply a 0.5% safety buffer
-            // for fee jitter; same-chain splits stay exact.
-            const hasBridge = resolved.some((l) => l.type === 'bridge');
-            if (hasBridge) {
-              target = (target * 995n) / 1000n;
-            }
-            convergedToFeasible = true;
-            break;
-          }
-          // Overshoot. Shrink by the excess plus a 10% margin so the
-          // next pass lands cleanly inside the balance.
-          const excess = totalInput - unifiedBalance;
-          target = target - excess - excess / 10n;
+          // resolveLegs returning ⇒ feasible. Lock it in and stop.
+          lastFeasible = target;
+          hasBridge = resolved.some((l) => l.type === 'bridge');
+          break;
         } catch {
-          // Quote / split failed (e.g. amount below Across minimum).
-          // Shrink by 5% and try again.
-          target = (target * 95n) / 100n;
+          // Infeasible at this target — shrink 8% and retry.
+          target = (target * 92n) / 100n;
         }
         if (target <= 0n) break;
       }
 
-      // If we never converged, fall back to a conservative 95% of balance.
-      const finalTarget = convergedToFeasible && target > 0n
-        ? target
-        : (unifiedBalance * 95n) / 100n;
+      let finalTarget: bigint;
+      if (lastFeasible !== null) {
+        // Apply 1% safety buffer for cross-chain to absorb fee jitter
+        // between this MAX quote and the actual Send quote.
+        finalTarget = hasBridge ? (lastFeasible * 99n) / 100n : lastFeasible;
+      } else {
+        // Probing never landed on a feasible target (route problems,
+        // very high fees, etc.) — fall back to 50% of balance. The user
+        // can adjust upward and the Send-time quote will surface any
+        // remaining shortfall with a precise error.
+        finalTarget = (unifiedBalance * 50n) / 100n;
+      }
       setAmountInput(formatToken(finalTarget));
     } finally {
       setMaxLoading(false);
