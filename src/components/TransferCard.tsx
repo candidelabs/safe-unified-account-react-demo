@@ -74,7 +74,6 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [chainResults, setChainResults] = useState<ChainResult[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [manualTab, setManualTab] = useState<'send' | 'receive' | null>(null);
-  const [maxLoading, setMaxLoading] = useState(false);
 
   const accountAddress = getItem('accountAddress') as `0x${string}`;
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
@@ -105,67 +104,6 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const isSelfTransfer = recipient.trim().toLowerCase() === accountAddress?.toLowerCase();
   const isAmountValid = parsedAmount !== null && parsedAmount > 0n && parsedAmount <= unifiedBalance;
   const canSend = isValidRecipient && !isSelfTransfer && isAmountValid && step === 'idle';
-
-  // Find the largest recipient amount such that the total input (after
-  // Across gross-up on cross-chain legs) fits in unifiedBalance.
-  //
-  // resolveLegs throws "Insufficient unified balance after Across fees"
-  // when the request can't fit — fees are non-linear in amount (Across
-  // has fixed minimums), so we probe downward: try a target, on throw
-  // shrink by 8%, retry. We track the largest target that succeeded.
-  // Apply a 1% buffer on success to absorb fee jitter between MAX and
-  // the actual Send (Across quotes can shift between calls).
-  const handleMax = async () => {
-    if (unifiedBalance === 0n) return;
-    setMaxLoading(true);
-    try {
-      const recipientAddr = (ADDRESS_REGEX.test(recipient.trim())
-        ? recipient.trim()
-        : accountAddress) as `0x${string}`;
-
-      let target = unifiedBalance;
-      let lastFeasible: bigint | null = null;
-      let hasBridge = false;
-
-      // Up to 6 passes: 0.92^6 ≈ 0.61 (down to 61% of balance) covers
-      // even high-fee testnet scenarios with small amounts.
-      for (let i = 0; i < 6; i++) {
-        try {
-          const intent: TransferIntent = {
-            totalAmount: target,
-            recipient: recipientAddr,
-            destination,
-          };
-          const split = computeTransferSplit(accountChains, balances, intent);
-          const resolved = await resolveLegs(accountChains, balances, split, intent);
-          // resolveLegs returning ⇒ feasible. Lock it in and stop.
-          lastFeasible = target;
-          hasBridge = resolved.some((l) => l.type === 'bridge');
-          break;
-        } catch {
-          // Infeasible at this target — shrink 8% and retry.
-          target = (target * 92n) / 100n;
-        }
-        if (target <= 0n) break;
-      }
-
-      let finalTarget: bigint;
-      if (lastFeasible !== null) {
-        // Apply 1% safety buffer for cross-chain to absorb fee jitter
-        // between this MAX quote and the actual Send quote.
-        finalTarget = hasBridge ? (lastFeasible * 99n) / 100n : lastFeasible;
-      } else {
-        // Probing never landed on a feasible target (route problems,
-        // very high fees, etc.) — fall back to 50% of balance. The user
-        // can adjust upward and the Send-time quote will surface any
-        // remaining shortfall with a precise error.
-        finalTarget = (unifiedBalance * 50n) / 100n;
-      }
-      setAmountInput(formatToken(finalTarget));
-    } finally {
-      setMaxLoading(false);
-    }
-  };
 
   const handleSend = async () => {
     if (!parsedAmount) return;
@@ -409,26 +347,13 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
           </div>
           <div className="form-field">
             <label className="form-label">Amount ({tokenSymbol})</label>
-            <div className="amount-input-wrap">
-              <input
-                type="text"
-                className="address-input amount-input"
-                placeholder="0.00"
-                value={amountInput}
-                onChange={(e) => setAmountInput(e.target.value)}
-              />
-              {unifiedBalance > 0n && (
-                <button
-                  type="button"
-                  className="amount-max-button"
-                  onClick={handleMax}
-                  disabled={maxLoading}
-                  title={maxLoading ? 'Calculating bridge fees…' : 'Use full balance (after bridge fees)'}
-                >
-                  {maxLoading ? '•••' : 'MAX'}
-                </button>
-              )}
-            </div>
+            <input
+              type="text"
+              className="address-input"
+              placeholder="0.00"
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+            />
             <span className="amount-fiat-estimate">≈ ${formatFiat(parsedAmount ?? 0n)}</span>
           </div>
           <div className="form-field">
