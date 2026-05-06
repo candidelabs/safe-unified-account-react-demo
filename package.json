@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "abstractionkit": "file:../abstractionkit",
+    "abstractionkit": "^0.3.7",
     "buffer": "^6.0.3",
     "ox": "^0.8.4",
     "qrcode.react": "^4.2.0",
