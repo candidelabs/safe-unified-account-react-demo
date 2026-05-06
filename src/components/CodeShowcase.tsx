@@ -32,7 +32,7 @@ function CodeShowcase() {
 						<span className="code-fn">{"map"}</span>
 						{"(chain => account."}
 						<span className="code-fn">{"createUserOperation"}</span>
-						{"(txs, chain, "}
+						{"(txs, chain.rpc, chain.bundler,\n    "}
 						{"{ expectedSigners: [pubkey] }))\n);\n\n"}
 						<span className="code-comment">{"// 3. Paymaster commit — gas estimation + sponsorship fields\n"}</span>
 						<span className="code-keyword">{"await "}</span>
@@ -51,13 +51,16 @@ function CodeShowcase() {
 						<span className="code-fn">{"fromSafeWebauthn"}</span>
 						{"({\n  publicKey: pubkey,\n  isInit: ops[0].nonce === 0n,\n  accountClass: SafeMultiChainSigAccountV1,\n  getAssertion: "}
 						<span className="code-keyword">{"async "}</span>
-						{"(challenge) => "}
-						<span className="code-fn">{"webauthnSignatureFromAssertion"}</span>
-						{"(\n    ("}
+						{"(challenge) => {\n    "}
+						<span className="code-keyword">{"const "}</span>
+						{"{ metadata, signature } = "}
 						<span className="code-keyword">{"await "}</span>
-						{"navigator.credentials."}
-						<span className="code-fn">{"get"}</span>
-						{"({ publicKey: { challenge, ... } })).response\n  ),\n});\n\n"}
+						{"WebAuthnP256."}
+						<span className="code-fn">{"sign"}</span>
+						{"({ challenge, credentialId });\n    "}
+						<span className="code-keyword">{"return "}</span>
+						<span className="code-fn">{"webauthnSignatureFromAssertion"}</span>
+						{"({ ...metadata, signature });\n  },\n});\n\n"}
 						<span className="code-comment">{"// 5. One passkey prompt → per-op signatures (merkle root or single-op SafeOp digest)\n"}</span>
 						<span className="code-keyword">{"const "}</span>
 						{"sigs = "}
@@ -87,9 +90,9 @@ function CodeShowcase() {
 						<span className="code-fn">{"all"}</span>
 						{"(ops."}
 						<span className="code-fn">{"map"}</span>
-						{"(op => "}
+						{"(op => account."}
 						<span className="code-fn">{"sendUserOperation"}</span>
-						{"(op)));"}
+						{"(op, bundler)));"}
 					</pre>
 				</div>
 			)}

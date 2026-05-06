@@ -5,14 +5,46 @@ const faqItems = [
 		question: "What is Safe Unified Account?",
 		answer: (
 			<p>
-				Safe Unified Account gives your users a single smart account
-				across every EVM chain. Sign once, execute everywhere. Your user
-				signs a single transaction that executes across multiple chains
-				simultaneously. This is user-driven: each multichain action is
-				an intentional operation, not automatic background syncing. Use cases
-				include managing signers and recovery across chains, consolidating
-				USDC balances from multiple chains to one destination, or depositing
-				assets into protocols like Aave for the best yield.
+				A single Safe smart account that lives on every EVM chain at the
+				same address. The user signs once and the operation executes on
+				the chains they target — no per-chain confirmations, no
+				relayer-driven background syncing.
+			</p>
+		),
+	},
+	{
+		question: "Is this production ready?",
+		answer: (
+			<p>
+				Yes. The contracts are audited by{" "}
+				<a
+					href="https://github.com/candidelabs/safe-4337-multi-chain-signature-module/"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					Nethermind
+				</a>{" "}
+				and live on mainnet today. If you're scoping an integration,{" "}
+				<a
+					href="https://cal.com/candidelabs/30mins"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					schedule a call
+				</a>
+				.
+			</p>
+		),
+	},
+	{
+		question: "How does the single signature work?",
+		answer: (
+			<p>
+				The system computes a Merkle root from the EIP-712 hashes of the
+				UserOperations on each target chain. The user signs that root
+				with their passkey. The signature is then expanded into per-chain
+				proofs, so each chain's contract independently verifies against
+				the shared root.
 			</p>
 		),
 	},
@@ -20,12 +52,84 @@ const faqItems = [
 		question: "What operations work multichain?",
 		answer: (
 			<p>
-				Any account management operation: add or remove authorized signers,
-				set up recovery guardians (friends, family, hardware wallets, or
-				services like Candide Guardian for email/SMS recovery), enable
-				modules, change signing thresholds. In this demo, you can manage
-				signers and configure account recovery across all chains with a
-				single tap. Configure once, enforced everywhere.
+				Any account-management operation: add or remove signers,
+				configure recovery guardians, enable modules, change signing
+				thresholds. The demo above lets you manage signers and guardians
+				across every configured chain in a single tap.
+			</p>
+		),
+	},
+	{
+		question: "What about stablecoin transfers?",
+		answer: (
+			<p>
+				Multichain stablecoin transfers work today via intent-based
+				bridges. This demo uses Across Protocol: the user signs once to
+				initiate deposits on multiple source chains in parallel, and a
+				relayer fronts liquidity on the destination.
+			</p>
+		),
+	},
+	{
+		question: "What if one chain fails mid-execution?",
+		answer: (
+			<p>
+				Each chain's UserOperation submits independently to its bundler,
+				so execution is parallel but not atomic across chains. If one
+				chain's bundler rejects or times out, the others still execute
+				and the demo surfaces the failure on that specific chain.
+			</p>
+		),
+	},
+	{
+		question: "Who pays gas?",
+		answer: (
+			<p>
+				The integrator does, via Candide's paymaster. You attach a
+				sponsorship policy ID per chain and the paymaster covers gas for
+				any UserOperation that matches. Users never need to hold the
+				native gas token.
+			</p>
+		),
+	},
+	{
+		question: "Can users move off this account?",
+		answer: (
+			<p>
+				Yes. The account is a Safe — same contracts, same ownership
+				semantics as any other Safe. Users can rotate signers to an EOA,
+				hardware wallet, or another passkey at any time. There is no
+				Candide-side custody: the account keeps working if our
+				infrastructure goes away.
+			</p>
+		),
+	},
+	{
+		question: "Why a smart account instead of EIP-7702?",
+		answer: (
+			<p>
+				EIP-7702 lets an EOA temporarily run contract code while keeping
+				the same secp256k1 key. Safe Unified Account is a smart account
+				from the start, so passkey signing, on-chain recovery, modules,
+				and the multichain Merkle-root signature scheme all work without
+				leaning on EOA semantics.
+			</p>
+		),
+	},
+	{
+		question: "What chains are supported?",
+		answer: (
+			<p>
+				Every EVM-compatible chain Candide supports — major L1s and L2s
+				on mainnet, plus their public testnets. See the{" "}
+				<a
+					href="https://docs.candide.dev/wallet/bundler/rpc-endpoints/"
+					target="_blank"
+					rel="noopener noreferrer"
+				>
+					RPC endpoints docs
+				</a>{" "}
+				for the current list.
 			</p>
 		),
 	},
@@ -41,75 +145,9 @@ const faqItems = [
 				>
 					AbstractionKit SDK
 				</a>{" "}
-				provides a simple API surface: initialize an account, build
-				transactions, sign once, send. The multichain demo you're looking at
-				is under 200 lines of logic. Most teams can go from zero to a working
+				gives you a small API surface: initialize an account, build
+				transactions, sign once, send. Most teams reach a working
 				prototype within a few days.
-			</p>
-		),
-	},
-	{
-		question: "What chains are supported?",
-		answer: (
-			<p>
-				Safe Unified Account works across EVM-compatible chains. This demo
-				runs on Ethereum Sepolia, Optimism Sepolia, and Arbitrum Sepolia.
-				Mainnet support covers Ethereum, Optimism, Arbitrum, Base, Polygon,
-				and more. See the{" "}
-				<a
-					href="https://docs.candide.dev/wallet/bundler/rpc-endpoints/"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					docs
-				</a>{" "}
-				for the full list.
-			</p>
-		),
-	},
-	{
-		question: "What about stablecoin transfers?",
-		answer: (
-			<p>
-				Multichain stablecoin transfers work today using intent-based
-				bridges. This demo uses Across Protocol for USDT/USDC, where
-				a relayer fronts liquidity on the destination and is later
-				reimbursed on the source via UMA's optimistic oracle. With
-				Unified Account, your user signs once to initiate Across
-				deposits across multiple chains simultaneously.
-			</p>
-		),
-	},
-	{
-		question: "Is this production ready?",
-		answer: (
-			<p>
-				The contracts have been audited by{" "}
-				<a
-					href="https://github.com/candidelabs/safe-4337-multi-chain-signature-module/"
-					target="_blank"
-					rel="noopener noreferrer"
-				>
-					Nethermind
-				</a>
-				. The SDK and smart contracts are functional on testnets and mainnets
-				today. If you're exploring this for production, we'd love to hear your
-				requirements.{" "}
-				<a href="https://cal.com/candidelabs/30mins" target="_blank" rel="noopener noreferrer">
-					Schedule a call
-				</a>{" "}.
-			</p>
-		),
-	},
-	{
-		question: "How does the single signature work?",
-		answer: (
-			<p>
-				The system computes a Merkle root from the EIP-712 hashes of
-				UserOperations on each target chain. Your user signs this single hash
-				with their passkey. The signature is then expanded into per-chain
-				proofs, so each chain's contract can independently verify against the
-				shared root. One biometric prompt, every chain updated.
 			</p>
 		),
 	},
@@ -117,10 +155,10 @@ const faqItems = [
 		question: "What are passkeys?",
 		answer: (
 			<p>
-				Passkeys use your device's biometric authentication (Touch ID, Face ID)
-				or security keys to sign transactions. WebAuthn P-256 signatures are
-				verified directly on-chain via EIP-7212 — no custodial intermediary.
-				Your user's private key never leaves their device.
+				Device-bound credentials (Touch ID, Face ID, security keys) that
+				produce WebAuthn P-256 signatures. Those signatures are verified
+				directly on-chain via EIP-7212 — no custodial signer in the
+				middle, and the private key never leaves the user's device.
 			</p>
 		),
 	},
@@ -133,23 +171,38 @@ function FaqCard() {
 		<div className="faq-section">
 			<h2 className="faq-title">Frequently Asked Questions</h2>
 			<div className="faq-list">
-				{faqItems.map((item, i) => (
-					<div
-						key={i}
-						className={`faq-item ${openIndex === i ? "faq-open" : ""}`}
-					>
-						<button
-							className="faq-question"
-							onClick={() => setOpenIndex(openIndex === i ? null : i)}
+				{faqItems.map((item, i) => {
+					const isOpen = openIndex === i;
+					const questionId = `faq-question-${i}`;
+					const answerId = `faq-answer-${i}`;
+					return (
+						<div
+							key={i}
+							className={`faq-item ${isOpen ? "faq-open" : ""}`}
 						>
-							<span>{item.question}</span>
-							<span className="faq-chevron">+</span>
-						</button>
-						{openIndex === i && (
-							<div className="faq-answer">{item.answer}</div>
-						)}
-					</div>
-				))}
+							<button
+								className="faq-question"
+								onClick={() => setOpenIndex(isOpen ? null : i)}
+								aria-expanded={isOpen}
+								aria-controls={answerId}
+								id={questionId}
+							>
+								<span>{item.question}</span>
+								<span className="faq-chevron">+</span>
+							</button>
+							{isOpen && (
+								<div
+									className="faq-answer"
+									id={answerId}
+									role="region"
+									aria-labelledby={questionId}
+								>
+									{item.answer}
+								</div>
+							)}
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);
