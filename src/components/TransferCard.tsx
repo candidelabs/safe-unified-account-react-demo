@@ -1,11 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   SafeMultiChainSigAccountV1 as SafeAccount,
 } from 'abstractionkit';
 
 import type { PasskeyLocalStorageFormat } from '../logic/passkeys';
 import { signAndSendMultiChainUserOps } from '../logic/userOp';
-import { getItem } from '../logic/storage';
 import { accountChains, destinationChains, tokenSymbol } from '../logic/chains';
 import { ChainIcon } from './ChainIcon';
 import { TokenIcon } from './TokenIcon';
@@ -76,7 +75,14 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [manualTab, setManualTab] = useState<'send' | 'receive' | null>(null);
 
-  const accountAddress = getItem('accountAddress') as `0x${string}`;
+  // Derive directly from the passkey instead of reading the localStorage entry
+  // IdentityStrip writes — that write happens in a useEffect, so on the first
+  // render after passkey creation it isn't there yet and the Receive tab would
+  // render empty until a state change forced a re-read.
+  const accountAddress = useMemo(
+    () => SafeAccount.createAccountAddress([passkey.pubkeyCoordinates]) as `0x${string}`,
+    [passkey],
+  );
   const unifiedBalance = balances.reduce((sum, b) => sum + b, 0n);
   // Auto-default: zero balance ⇒ Receive (the new-user path), funded ⇒ Send.
   // Once the user clicks a tab, manualTab takes over until handleReset clears it.
