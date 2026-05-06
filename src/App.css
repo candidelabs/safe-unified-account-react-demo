@@ -898,6 +898,7 @@
   line-height: 1.6;
   color: var(--text-primary);
   word-break: break-all;
+  white-space: pre-line;
   letter-spacing: 0.01em;
 }
 

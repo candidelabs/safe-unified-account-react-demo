@@ -1,18 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 
-const SKILL_URL = "https://docs.candide.dev/safe-unified-account-agent-skill.md";
+const SKILL_URL =
+	"https://raw.githubusercontent.com/candidelabs/skills/main/skills/safe-unified-account/SKILL.md";
 
 const PROMPTS = [
 	{
 		label: "Claude Code",
-		text: `claude "Read ${SKILL_URL} and integrate Safe Unified Account"`,
+		text: `/plugin marketplace add candidelabs/skills\n/plugin install candide@candide`,
+	},
+	{
+		label: "Codex CLI",
+		text: `npx -y github:candidelabs/skills`,
 	},
 	{
 		label: "Cursor / Windsurf",
-		text: `Read ${SKILL_URL} and integrate Safe Unified Account into this project`,
-	},
-	{
-		label: "Codex / ChatGPT",
 		text: `Read ${SKILL_URL} and integrate Safe Unified Account into this project`,
 	},
 ];
@@ -41,7 +42,8 @@ function CtaCard() {
 		<div className="cta-card">
 			<h3>Start Integrating with AI</h3>
 			<p className="action-description">
-				Use this prompt with your coding agent to integrate Safe Unified Account.
+				Add the Safe Unified Account skill to your coding agent — it
+				will know how to integrate it correctly.
 			</p>
 			<div className="cta-agent-tabs">
 				{PROMPTS.map((p, i) => (
