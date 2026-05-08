@@ -74,7 +74,17 @@ export async function readAllBalances(
   chains: AccountChainConfig[],
   address: `0x${string}`,
 ): Promise<bigint[]> {
-  return Promise.all(chains.map((chain) => readBalance(chain, address)));
+  // allSettled, not all: one bad RPC or misconfigured token address must not
+  // zero out every other chain's balance. Failures degrade to 0n for that
+  // single chain.
+  const settled = await Promise.allSettled(
+    chains.map((chain) => readBalance(chain, address)),
+  );
+  return settled.map((r, i) => {
+    if (r.status === 'fulfilled') return r.value;
+    console.error(`balanceOf failed for ${chains[i].chainName} (${chains[i].chainId}):`, r.reason);
+    return 0n;
+  });
 }
 
 // ── Transfer split (pre-fee, pure) ─────────────────────────────
