@@ -531,110 +531,156 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         );
       })()}
 
-      {step === 'resolving' && <p className="step-label">Quoting fees…</p>}
-      {step === 'preparing' && <p className="step-label">Preparing transfer…</p>}
-      {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
-      {step === 'delivering' && <p className="step-label">Sent. Delivering to {destination.chainName}…</p>}
+      {(step === 'resolving' || step === 'preparing' || step === 'signing') && (
+        <div className="tx-status-inline">
+          <span className="tx-status-spinner" />
+          <span>
+            {step === 'resolving' && 'Quoting fees…'}
+            {step === 'preparing' && 'Preparing transfer…'}
+            {step === 'signing' && 'Authenticate with your passkey'}
+          </span>
+        </div>
+      )}
 
-      {(step === 'pending' || step === 'delivering' || step === 'success') && (
-        <>
-          {step === 'success' && (() => {
-            // Honest status: a leg counts as fully done only if it executed AND
-            // (for bridges) the destination saw the funds arrive.
-            const hasFailure = chainResults.some((r) => !!r.error);
-            const hasUndeliveredBridge = chainResults.some(
-              (r) => r.type === 'bridge' && !!r.txHash && r.delivered === false,
-            );
-            const truncatedRecipient = `${recipient.slice(0, 8)}...${recipient.slice(-6)}`;
+      {(step === 'pending' || step === 'delivering' || step === 'success') && (() => {
+        const hasFailure = chainResults.some((r) => !!r.error);
+        const hasReturned = chainResults.some((r) => r.expired === true);
+        const truncatedRecipient = `${recipient.slice(0, 6)}…${recipient.slice(-4)}`;
+        const fullySent = step === 'success' && !hasFailure && !hasReturned;
 
-            if (hasFailure) {
-              return (
-                <div className="success-banner failure-banner">
-                  <p>Couldn't send on every chain. See details below.</p>
+        let heroVariant: 'spinner' | 'check' | 'none' = 'spinner';
+        let heroHeadline = '';
+        if (fullySent) {
+          heroVariant = 'check';
+          heroHeadline = `${formatTokenShort(parsedAmount!)} ${tokenSymbol} sent`;
+        } else if (step === 'success' && (hasFailure || hasReturned)) {
+          heroVariant = 'none';
+          heroHeadline = hasFailure
+            ? "Couldn't send on every chain"
+            : 'Some funds returned to source';
+        } else if (step === 'delivering') {
+          heroHeadline = `Delivering to ${destination.chainName}…`;
+        } else {
+          heroHeadline = `Sending ${formatTokenShort(parsedAmount!)} ${tokenSymbol}`;
+        }
+
+        const showRecipientSubline = !hasFailure && !hasReturned;
+        const chainCount = chainResults.length;
+
+        return (
+          <div className="tx-status">
+            <div className={`tx-status-hero ${heroVariant === 'none' ? 'tx-status-hero-textonly' : ''}`}>
+              {heroVariant !== 'none' && (
+                <div className={`tx-status-icon tx-status-icon-${heroVariant}`}>
+                  {heroVariant === 'check' && (
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="5 12 10 17 19 7" />
+                    </svg>
+                  )}
                 </div>
-              );
-            }
-
-            if (hasUndeliveredBridge) {
-              return (
-                <div className="success-banner">
-                  <div className="success-banner-headline">Sent ✓</div>
-                  <p className="success-banner-subline">Delivering to {destination.chainName}…</p>
-                </div>
-              );
-            }
-
-            return (
-              <div className="success-banner">
-                <div className="success-banner-headline">Sent ✓</div>
-                <p className="success-banner-subline">
-                  {formatToken(parsedAmount!)} {tokenSymbol} to <code>{truncatedRecipient}</code> on {destination.chainName}
-                </p>
-              </div>
-            );
-          })()}
-          <div className="chain-results">
-            {chainResults.map((result, i) => {
-              const chain = accountChains[result.chainIndex];
-              const isPending = result.userOpHash && !result.txHash && !result.error;
-              const isError = !!result.error;
-              const isBridge = result.type === 'bridge';
-              const isDelivering = isBridge && result.delivering;
-              const isDelivered = isBridge && result.delivered;
-              const isExpired = isBridge && result.expired === true;
-              const isSourceConfirmedOnly = isBridge && !!result.txHash && !result.delivering && !result.delivered && !result.expired;
-              const isLocalConfirmed = !isBridge && !!result.txHash;
-              let statusClass = '';
-              if (isPending || isDelivering) statusClass = 'pending';
-              else if (isLocalConfirmed || isDelivered) statusClass = 'success';
-              else if (isError || isExpired) statusClass = 'error';
-              else if (isSourceConfirmedOnly) statusClass = 'pending';
-              return (
-                <div key={i} className="chain-status-card">
-                  <strong>
-                    <ChainIcon chainId={chain.chainId} />
-                    {chain.chainName}
-                  </strong>
-                  <span className="action-chip">{result.type === 'local-transfer' ? 'Direct' : 'Cross-chain'}</span>
-                  <div className="chain-status-row">
-                    <span className={`status-dot ${statusClass}`} />
-                    <span>
-                      {isPending && 'Sending…'}
-                      {isLocalConfirmed && 'Arrived'}
-                      {isDelivering && `Delivering to ${destination.chainName}…`}
-                      {isDelivered && 'Arrived'}
-                      {isExpired && `Couldn't deliver. Funds returned to ${chain.chainName}`}
-                      {isSourceConfirmedOnly && 'Sent'}
-                      {isError && result.error}
+              )}
+              <div className="tx-status-hero-content">
+                <div className="tx-status-headline">{heroHeadline}</div>
+                {showRecipientSubline ? (
+                  <div className="tx-status-subline">
+                    <span className="tx-status-subline-label">To</span>
+                    <code>{truncatedRecipient}</code>
+                    <span className="tx-status-subline-chain">
+                      <ChainIcon chainId={destination.chainId} />
+                      {destination.chainName}
                     </span>
                   </div>
-                  {!!result.txHash && (
-                    <a className="chain-track-link" target="_blank" href={`${chain.explorerUrl}/tx/${result.txHash}`}>View on {chain.chainName} ↗</a>
-                  )}
-                  {!!result.fillTxHash && (
-                    <a
-                      className="chain-track-link"
-                      target="_blank"
-                      href={`${destination.explorerUrl}/tx/${result.fillTxHash}`}
-                    >
-                      View on {destination.chainName} ↗
-                    </a>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {step === 'success' && (
-            <>
-              <div className="completion-metrics">
-                <div className="metric"><span className="metric-value">1</span><span className="metric-label">signature</span></div>
-                <div className="metric"><span className="metric-value">{chainResults.length}</span><span className="metric-label">chains used</span></div>
+                ) : (
+                  <div className="tx-status-subline">See breakdown below.</div>
+                )}
               </div>
-              <button className="primary-button" style={{ marginTop: '1rem' }} onClick={handleReset}>New Transfer</button>
-            </>
-          )}
-        </>
-      )}
+            </div>
+
+            <div className="tx-status-source">
+              <div className="review-section-label">
+                {chainCount} chain{chainCount > 1 ? 's' : ''}
+              </div>
+              <ul className="tx-status-rows">
+                {chainResults.map((result, i) => {
+                  const chain = accountChains[result.chainIndex];
+                  const leg = legs.find((l) => l.chainIndex === result.chainIndex);
+                  const isPending = result.userOpHash && !result.txHash && !result.error;
+                  const isError = !!result.error;
+                  const isBridge = result.type === 'bridge';
+                  const isDelivering = isBridge && result.delivering;
+                  const isDelivered = isBridge && result.delivered;
+                  const isExpired = isBridge && result.expired === true;
+                  const isSourceConfirmedOnly = isBridge && !!result.txHash && !result.delivering && !result.delivered && !result.expired;
+                  const isLocalConfirmed = !isBridge && !!result.txHash;
+
+                  let statusClass = '';
+                  if (isPending || isDelivering || isSourceConfirmedOnly) statusClass = 'pending';
+                  else if (isLocalConfirmed || isDelivered) statusClass = 'success';
+                  else if (isError || isExpired) statusClass = 'error';
+
+                  let statusText = '';
+                  if (isPending) statusText = 'Sending…';
+                  else if (isLocalConfirmed) statusText = 'Arrived';
+                  else if (isDelivering) statusText = 'Delivering…';
+                  else if (isDelivered) statusText = 'Arrived';
+                  else if (isExpired) statusText = 'Returned';
+                  else if (isSourceConfirmedOnly) statusText = 'Sent on chain';
+                  else if (isError) statusText = result.error!;
+
+                  return (
+                    <li key={i} className="tx-status-row">
+                      <div className="tx-status-row-top">
+                        <span className="tx-status-row-chain">
+                          <ChainIcon chainId={chain.chainId} />
+                          {chain.chainName}
+                        </span>
+                        {leg && (
+                          <span className="tx-status-row-amount">
+                            {formatTokenShort(leg.inputAmount)} {tokenSymbol}
+                          </span>
+                        )}
+                      </div>
+                      <div className="tx-status-row-bottom">
+                        <span className={`tx-status-row-state tx-status-row-state-${statusClass}`}>
+                          <span className={`status-dot ${statusClass}`} />
+                          {statusText}
+                        </span>
+                        <span className="tx-status-row-links">
+                          {!!result.txHash && (
+                            <a target="_blank" rel="noreferrer" href={`${chain.explorerUrl}/tx/${result.txHash}`}>
+                              {chain.chainName} ↗
+                            </a>
+                          )}
+                          {!!result.fillTxHash && (
+                            <a target="_blank" rel="noreferrer" href={`${destination.explorerUrl}/tx/${result.fillTxHash}`}>
+                              {destination.chainName} ↗
+                            </a>
+                          )}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {step === 'success' && (
+              <>
+                {fullySent && (
+                  <div className="tx-status-metrics">
+                    <span><strong>1</strong> signature</span>
+                    <span className="tx-status-metrics-sep">·</span>
+                    <span><strong>{chainCount}</strong> chain{chainCount > 1 ? 's' : ''}</span>
+                  </div>
+                )}
+                <button className="primary-button tx-status-cta" onClick={handleReset}>
+                  New transfer
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {error && <div className="error-message"><p>Error: {error}</p></div>}
     </div>
