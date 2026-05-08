@@ -462,6 +462,31 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 		}
 	};
 
+	// The passkey is "missing" on a chain when that chain's Safe hasn't been
+	// deployed yet — its address is determined by initCode that includes the
+	// passkey, so deployment automatically registers it as the initial owner.
+	// A no-op self-call is enough payload to trigger the bundler's initCode.
+	const handleSyncPasskeyToMissingChains = async () => {
+		const presence = presenceVector(ownersPerChain, passkeySignerAddress);
+		const missingIndices = presence
+			.map((present, i) => (present ? -1 : i))
+			.filter((i) => i !== -1);
+		if (missingIndices.length === 0) return;
+
+		setActionSummary({ type: "add", address: passkeySignerAddress, tab: "signers" });
+		try {
+			await executeMultiChainOp(
+				async () =>
+					missingIndices.map(() => [
+						{ to: accountAddress, value: 0n, data: "0x" },
+					]),
+				missingIndices,
+			);
+		} catch (err) {
+			reportError(err);
+		}
+	};
+
 	// ── Guardian actions ────────────────────────────────────────────
 
 	const handleAddGuardian = async () => {
@@ -756,9 +781,35 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 								</div>
 							)}
 							<div className="owner-list">
-								<div className="owner-item">
-									<span className="owner-label">Passkey (you)</span>
-								</div>
+								{(() => {
+									const presence = presenceVector(ownersPerChain, passkeySignerAddress);
+									const allChains = presence.every(Boolean);
+									const missing = presence.filter((p) => !p).length;
+									return (
+										<div
+											className={`owner-item owner-item-block ${allChains ? "" : "owner-item-divergent"}`}
+										>
+											<div className="owner-item-row">
+												<span className="owner-label">Passkey (you)</span>
+											</div>
+											{renderPresenceRow(presence)}
+											{!allChains && (
+												<div className="divergence-actions">
+													<span className="divergence-hint">
+														Missing on {missing} chain{missing > 1 ? "s" : ""}.
+													</span>
+													<button
+														className="sync-button sync-add"
+														onClick={handleSyncPasskeyToMissingChains}
+														title={`Add this passkey on the ${missing} chain${missing > 1 ? "s" : ""} where it's missing`}
+													>
+														Sync to all chains
+													</button>
+												</div>
+											)}
+										</div>
+									);
+								})()}
 								{cosigners.map((cosigner) => {
 									const presence = presenceVector(ownersPerChain, cosigner);
 									const allChains = presence.every(Boolean);
