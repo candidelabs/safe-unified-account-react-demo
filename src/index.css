@@ -36,8 +36,8 @@
   --text-tertiary: rgba(255, 255, 255, 0.5);
 
   /* Typography */
-  --font-display: 'Instrument Serif', Georgia, serif;
-  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-display: 'Mona Sans', system-ui, -apple-system, sans-serif;
+  --font-body: 'Mona Sans', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
 
   /* Radii */
@@ -126,11 +126,10 @@ body {
 
 h1 {
   font-family: var(--font-display);
-  font-style: italic;
   font-size: 3.6em;
-  font-weight: 400;
+  font-weight: 600;
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.035em;
   margin: 0;
 }
 

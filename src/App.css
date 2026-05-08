@@ -480,9 +480,10 @@
 .metric-value {
   display: block;
   font-family: var(--font-display);
-  font-style: italic;
   font-size: 2.5rem;
-  font-weight: 400;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
   line-height: 1;
 }
@@ -1099,8 +1100,9 @@
 .balance-amount {
   font-family: var(--font-display);
   font-size: 4.5rem;
-  font-weight: 400;
-  font-style: italic;
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  font-variant-numeric: tabular-nums;
   line-height: 1;
   margin: 0.75rem 0 1rem;
   overflow-wrap: anywhere;
@@ -1467,11 +1469,10 @@
 
 .view-settings-title {
   font-family: var(--font-display);
-  font-style: italic;
   font-size: 2.2rem;
-  font-weight: 400;
+  font-weight: 600;
   margin: 0.5rem 0 0.5rem;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.03em;
 }
 
 .view-settings-subtitle {
