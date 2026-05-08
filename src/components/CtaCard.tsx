@@ -42,8 +42,8 @@ function CtaCard() {
 		<div className="cta-card">
 			<h3>Start Integrating with AI</h3>
 			<p className="action-description">
-				Add the Safe Unified Account skill to your coding agent — it
-				will know how to integrate it correctly.
+				Add the Safe Unified Account skill so your coding agent
+				integrates it correctly.
 			</p>
 			<div className="cta-agent-tabs">
 				{PROMPTS.map((p, i) => (

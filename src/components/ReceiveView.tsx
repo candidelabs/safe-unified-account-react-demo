@@ -79,7 +79,7 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
             ))}
           </div>
           <p className="receive-tagline">
-            However the sender pays, it lands in your unified balance.
+            Senders pay on any chain. You receive on these.
           </p>
         </div>
       </div>
@@ -102,7 +102,7 @@ function ReceiveView({ accountAddress }: ReceiveViewProps) {
             ))}
           </div>
           <p className="receive-faucet-hint">
-            Clicking copies your address — paste it on the faucet site.
+            Clicking copies your address. Paste it on the faucet site.
           </p>
         </div>
       )}

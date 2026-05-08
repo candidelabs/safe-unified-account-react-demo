@@ -34,7 +34,7 @@ function CodeShowcase() {
 						<span className="code-fn">{"createUserOperation"}</span>
 						{"(txs, chain.rpc, chain.bundler,\n    "}
 						{"{ expectedSigners: [pubkey] }))\n);\n\n"}
-						<span className="code-comment">{"// 3. Paymaster commit — gas estimation + sponsorship fields\n"}</span>
+						<span className="code-comment">{"// 3. Paymaster commit: gas estimation + sponsorship fields\n"}</span>
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>
@@ -73,7 +73,7 @@ function CodeShowcase() {
 						{"ops."}
 						<span className="code-fn">{"forEach"}</span>
 						{"((op, i) => { op.signature = sigs[i]; });\n\n"}
-						<span className="code-comment">{"// 6. Paymaster finalize — seal paymaster data after signing\n"}</span>
+						<span className="code-comment">{"// 6. Paymaster finalize: seal paymaster data after signing\n"}</span>
 						<span className="code-keyword">{"await "}</span>
 						{"Promise."}
 						<span className="code-fn">{"all"}</span>

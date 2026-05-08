@@ -98,7 +98,7 @@ function App() {
 					/>
 					<h2 className="view-settings-title">Account Security</h2>
 					<p className="view-settings-subtitle">
-						Manage authorized signers and recovery guardians across every chain — in a single signature.
+						Manage signers and guardians across all chains.
 					</p>
 					<AccountCard passkey={passkey} />
 				</div>

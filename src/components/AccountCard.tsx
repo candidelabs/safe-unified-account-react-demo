@@ -776,8 +776,8 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 						<>
 							{ownersDivergent && (
 								<div className="divergence-banner">
-									<strong>Account is out of sync across chains.</strong>
-									<span> One or more signers exist on some chains but not others. Use the inline actions to bring chains in line with your preferred state.</span>
+									<strong>Some signers aren't on every chain.</strong>
+									<span> Sync them below.</span>
 								</div>
 							)}
 							<div className="owner-list">
@@ -857,7 +857,7 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 								})}
 							</div>
 							<p className="action-description">
-								Add or remove authorized signers across all chains. For shared business accounts.
+								Add or remove authorized signers across all chains.
 							</p>
 							{renderAddressInput()}
 						</>
@@ -867,8 +867,8 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 						<>
 							{guardiansDivergent && (
 								<div className="divergence-banner">
-									<strong>Guardian state is out of sync across chains.</strong>
-									<span> One or more guardians exist on some chains but not others. Use the inline actions to bring chains in line.</span>
+									<strong>Some guardians aren't on every chain.</strong>
+									<span> Sync them below.</span>
 								</div>
 							)}
 							<div className="owner-list">
@@ -977,26 +977,18 @@ function AccountCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 										{retrying ? "Retrying..." : `Retry ${failedCount} failed chain${failedCount > 1 ? "s" : ""}`}
 									</button>
 								)}
-								{succeededCount > 0 && (() => {
-									const targetedCount = chainResults.filter((r) => r.txHash || r.error).length;
-									return (
-										<>
-											<div className="completion-metrics">
-												<div className="metric">
-													<span className="metric-value">1</span>
-													<span className="metric-label">signature</span>
-												</div>
-												<div className="metric">
-													<span className="metric-value">{succeededCount}</span>
-													<span className="metric-label">chain{succeededCount > 1 ? "s" : ""} updated</span>
-												</div>
-											</div>
-											<p className="metric-contrast">
-												Without Unified Account: {targetedCount} separate signatures, {targetedCount} gas payments
-											</p>
-										</>
-									);
-								})()}
+								{succeededCount > 0 && (
+									<div className="completion-metrics">
+										<div className="metric">
+											<span className="metric-value">1</span>
+											<span className="metric-label">signature</span>
+										</div>
+										<div className="metric">
+											<span className="metric-value">{succeededCount}</span>
+											<span className="metric-label">chain{succeededCount > 1 ? "s" : ""} updated</span>
+										</div>
+									</div>
+								)}
 								<button
 									className="primary-button"
 									style={{ marginTop: "1rem" }}

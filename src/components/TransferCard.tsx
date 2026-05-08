@@ -506,7 +506,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       {step === 'resolving' && <p className="step-label">Quoting fees…</p>}
       {step === 'preparing' && <p className="step-label">Preparing transfer…</p>}
       {step === 'signing' && <p className="step-label">Authenticate with your passkey…</p>}
-      {step === 'delivering' && <p className="step-label">Sent — delivering to {destination.chainName}…</p>}
+      {step === 'delivering' && <p className="step-label">Sent. Delivering to {destination.chainName}…</p>}
 
       {(step === 'pending' || step === 'delivering' || step === 'success') && (
         <>
@@ -522,7 +522,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
             if (hasFailure) {
               return (
                 <div className="success-banner failure-banner">
-                  <p>Couldn't send on every chain — see details below.</p>
+                  <p>Couldn't send on every chain. See details below.</p>
                 </div>
               );
             }
@@ -575,7 +575,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
                       {isLocalConfirmed && 'Arrived'}
                       {isDelivering && `Delivering to ${destination.chainName}…`}
                       {isDelivered && 'Arrived'}
-                      {isExpired && `Couldn't deliver — funds returned to ${chain.chainName}`}
+                      {isExpired && `Couldn't deliver. Funds returned to ${chain.chainName}`}
                       {isSourceConfirmedOnly && 'Sent'}
                       {isError && result.error}
                     </span>

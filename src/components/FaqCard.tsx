@@ -7,8 +7,8 @@ const faqItems = [
 			<p>
 				A single Safe smart account that lives on every EVM chain at the
 				same address. The user signs once and the operation executes on
-				the chains they target — no per-chain confirmations, no
-				relayer-driven background syncing.
+				the chains they target. No per-chain prompts, nothing syncing
+				in the background.
 			</p>
 		),
 	},
@@ -96,7 +96,7 @@ const faqItems = [
 		question: "Can users move off this account?",
 		answer: (
 			<p>
-				Yes. The account is a Safe — same contracts, same ownership
+				Yes. The account is a Safe: same contracts, same ownership
 				semantics as any other Safe. Users can rotate signers to an EOA,
 				hardware wallet, or another passkey at any time. There is no
 				Candide-side custody: the account keeps working if our
@@ -120,7 +120,7 @@ const faqItems = [
 		question: "What chains are supported?",
 		answer: (
 			<p>
-				Every EVM-compatible chain Candide supports — major L1s and L2s
+				Every EVM-compatible chain Candide supports: major L1s and L2s
 				on mainnet, plus their public testnets. See the{" "}
 				<a
 					href="https://docs.candide.dev/wallet/bundler/rpc-endpoints/"
@@ -146,8 +146,7 @@ const faqItems = [
 					AbstractionKit SDK
 				</a>{" "}
 				gives you a small API surface: initialize an account, build
-				transactions, sign once, send. Most teams reach a working
-				prototype within a few days.
+				transactions, sign once, send.
 			</p>
 		),
 	},
@@ -157,7 +156,7 @@ const faqItems = [
 			<p>
 				Device-bound credentials (Touch ID, Face ID, security keys) that
 				produce WebAuthn P-256 signatures. Those signatures are verified
-				directly on-chain via EIP-7212 — no custodial signer in the
+				directly on-chain via EIP-7212. No custodial signer in the
 				middle, and the private key never leaves the user's device.
 			</p>
 		),
