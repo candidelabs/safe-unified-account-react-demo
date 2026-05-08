@@ -1103,6 +1103,7 @@
   font-style: italic;
   line-height: 1;
   margin: 0.75rem 0 1rem;
+  overflow-wrap: anywhere;
   background: linear-gradient(135deg, #ffffff 0%, #ffffff 40%, #ffd0e3 70%, var(--accent) 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -1129,8 +1130,9 @@
 
 .balance-breakdown {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
-  gap: 1rem;
+  gap: 0.5rem 1rem;
   font-size: 0.85rem;
   color: var(--text-tertiary);
 }
@@ -1899,4 +1901,148 @@
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   color: var(--text-primary);
+}
+
+/* ===== Phone breakpoint (≤ 600px) ===== */
+
+@media screen and (max-width: 600px) {
+  /* Tighten container chrome so cards have more usable width */
+  .card {
+    padding: 1.5rem 1.25rem;
+  }
+
+  /* Inputs: 16px prevents iOS zoom-on-focus */
+  .address-input {
+    font-size: 1rem;
+  }
+
+  /* Identity strip: tighter so the truncated address + copy hint don't crowd */
+  .identity-strip {
+    padding: 0.35rem 0.5rem 0.35rem 0.4rem;
+    gap: 0.4rem;
+  }
+
+  .identity-address {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .identity-address-copy {
+    font-size: 0.68rem;
+  }
+
+  /* Tabs: smaller text, tighter padding */
+  .tab-button {
+    font-size: 0.85rem;
+    padding: 0.6rem 0.5rem;
+  }
+
+  /* Confirm review: stack action buttons full-width */
+  .confirm-actions {
+    flex-direction: column;
+  }
+
+  .confirm-actions button {
+    width: 100%;
+  }
+
+  /* Owner / guardian rows */
+  .owner-item-block {
+    padding: 0.75rem !important;
+    gap: 0.55rem;
+  }
+
+  .owner-item-address {
+    font-size: 0.72rem;
+  }
+
+  /* Bigger touch targets for inline row controls */
+  .remove-button,
+  .retry-button {
+    padding: 0.45rem 0.8rem;
+    font-size: 0.8rem;
+  }
+
+  /* Per-chain presence chips: hide chain name text, keep icons + tooltip */
+  .presence-chain-label {
+    display: none;
+  }
+
+  .presence-chain {
+    padding: 0.3rem 0.4rem;
+  }
+
+  /* Divergence actions: stack hint + sync buttons full-width on narrow screens */
+  .divergence-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .divergence-hint {
+    margin-right: 0;
+    margin-bottom: 0.15rem;
+  }
+
+  .sync-button {
+    width: 100%;
+    padding: 0.55rem 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  /* CTA agent tab labels (Claude Code / Codex / Cursor / Windsurf) */
+  .cta-agent-tab {
+    font-size: 0.74rem;
+    padding: 0.55rem 0.4rem;
+  }
+
+  /* Headings */
+  .cta-card h3 {
+    font-size: 1.2rem;
+  }
+
+  .faq-title {
+    font-size: 1.3rem;
+  }
+
+  .view-settings-title {
+    font-size: 1.8rem;
+  }
+
+  .view-settings-subtitle {
+    font-size: 0.92rem;
+  }
+
+  .subtitle {
+    font-size: 1rem;
+  }
+
+  /* Per-chain status cards on transfer/account flows */
+  .chain-status-card {
+    padding: 1rem;
+  }
+
+  .chain-balance {
+    font-size: 0.78rem;
+  }
+
+  /* Action chip: drop to its own line under the chain name in result cards */
+  .chain-status-card .action-chip {
+    margin-left: 0;
+    margin-top: 0.35rem;
+  }
+
+  /* Success banner */
+  .success-banner {
+    padding: 1rem 1.1rem;
+  }
+
+  .success-banner-headline {
+    font-size: 1.35rem;
+  }
+
+  /* Hero — keep h1 controlled at narrow widths */
+  .hero h1 {
+    font-size: 2.2em;
+    overflow-wrap: break-word;
+  }
 }
