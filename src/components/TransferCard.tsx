@@ -471,6 +471,28 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
               </div>
             ))}
           </div>
+          {(() => {
+            const totalInput = legs.reduce((sum, l) => sum + l.inputAmount, 0n);
+            const totalOutput = legs.reduce((sum, l) => sum + l.outputAmount, 0n);
+            const bridgeFee = totalInput - totalOutput;
+            if (bridgeFee === 0n) return null;
+            return (
+              <div className="confirm-totals">
+                <div className="confirm-total-row">
+                  <span>Recipient receives</span>
+                  <span>{formatToken(totalOutput)} {tokenSymbol}</span>
+                </div>
+                <div className="confirm-total-row">
+                  <span>Bridge fee</span>
+                  <span>+{formatToken(bridgeFee)} {tokenSymbol}</span>
+                </div>
+                <div className="confirm-total-row confirm-total-spend">
+                  <span>You spend</span>
+                  <span>{formatToken(totalInput)} {tokenSymbol}</span>
+                </div>
+              </div>
+            );
+          })()}
           {legs.some((l) => l.type === 'bridge') && (
             <p className="confirm-note">Cross-chain legs deliver in seconds.</p>
           )}
