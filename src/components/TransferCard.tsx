@@ -46,6 +46,17 @@ function formatToken(amount: bigint): string {
   return fracStr ? `${whole}.${fracStr}` : whole.toString();
 }
 
+// Half-up round to N decimals + thousand separators on the integer part.
+// Used in the Review screen so users see "147.94" not "147.938281".
+function formatTokenShort(amount: bigint, decimals = 2): string {
+  const scale = 10n ** BigInt(TOKEN_DECIMALS - decimals);
+  const rounded = (amount + scale / 2n) / scale;
+  const denom = 10n ** BigInt(decimals);
+  const whole = rounded / denom;
+  const frac = rounded % denom;
+  return `${whole.toLocaleString('en-US')}.${frac.toString().padStart(decimals, '0')}`;
+}
+
 // Both USDC and USDT are 1:1 USD pegs in this demo. Truncate to 2 decimals.
 function formatFiat(amount: bigint): string {
   const dollars = amount / 10n ** BigInt(TOKEN_DECIMALS);
@@ -447,61 +458,78 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
         </div>
       )}
 
-      {step === 'confirm' && (
-        <div className="confirm-breakdown">
-          <h3>Review</h3>
-          <p className="confirm-summary">
-            Sending {formatToken(parsedAmount!)} {tokenSymbol} to{' '}
-            <code>{recipient.slice(0, 8)}...{recipient.slice(-6)}</code> on{' '}
-            {destination.chainName}
-          </p>
-          <div className="confirm-steps">
-            {legs.map((leg, i) => (
-              <div key={i} className="confirm-step">
-                <span className="confirm-chain">
-                  <ChainIcon chainId={accountChains[leg.chainIndex].chainId} />
-                  {accountChains[leg.chainIndex].chainName}
-                </span>
-                <span className="confirm-action">
-                  {formatToken(leg.outputAmount)} {tokenSymbol}
-                  <span className="action-chip">
-                    {leg.type === 'local-transfer' ? 'Direct' : 'Cross-chain'}
-                  </span>
+      {step === 'confirm' && (() => {
+        const totalInput = legs.reduce((sum, l) => sum + l.inputAmount, 0n);
+        const totalOutput = legs.reduce((sum, l) => sum + l.outputAmount, 0n);
+        const bridgeFee = totalInput - totalOutput;
+        const sourceLegs = legs.filter((l) => l.inputAmount > 0n);
+
+        return (
+          <div className="confirm-breakdown">
+            <h3>Review transfer</h3>
+
+            <div className="review-hero">
+              <div className="review-hero-amount">
+                {formatTokenShort(totalOutput)} {tokenSymbol}
+              </div>
+              <div className="review-hero-fiat">≈ ${formatFiat(totalOutput)}</div>
+              <div className="review-hero-to">
+                <span className="review-hero-label">To</span>
+                <code>{recipient.slice(0, 6)}…{recipient.slice(-4)}</code>
+                <span className="review-hero-chain">
+                  <ChainIcon chainId={destination.chainId} />
+                  {destination.chainName}
                 </span>
               </div>
-            ))}
-          </div>
-          {(() => {
-            const totalInput = legs.reduce((sum, l) => sum + l.inputAmount, 0n);
-            const totalOutput = legs.reduce((sum, l) => sum + l.outputAmount, 0n);
-            const bridgeFee = totalInput - totalOutput;
-            if (bridgeFee === 0n) return null;
-            return (
-              <div className="confirm-totals">
-                <div className="confirm-total-row">
-                  <span>Recipient receives</span>
-                  <span>{formatToken(totalOutput)} {tokenSymbol}</span>
+            </div>
+
+            {sourceLegs.length > 0 && (
+              <div className="review-source">
+                <div className="review-section-label">
+                  Sourced from {sourceLegs.length} chain{sourceLegs.length > 1 ? 's' : ''}
                 </div>
-                <div className="confirm-total-row">
+                <ul className="review-source-rows">
+                  {sourceLegs.map((leg, i) => (
+                    <li key={i} className="review-source-row">
+                      <span className="review-source-chain">
+                        <ChainIcon chainId={accountChains[leg.chainIndex].chainId} />
+                        {accountChains[leg.chainIndex].chainName}
+                      </span>
+                      <span className="review-source-amount">
+                        {formatTokenShort(leg.inputAmount)} {tokenSymbol}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div className="review-totals">
+              {bridgeFee > 0n && (
+                <div className="review-total-row">
                   <span>Bridge fee</span>
-                  <span>+{formatToken(bridgeFee)} {tokenSymbol}</span>
+                  <span>+{formatTokenShort(bridgeFee)} {tokenSymbol}</span>
                 </div>
-                <div className="confirm-total-row confirm-total-spend">
-                  <span>You spend</span>
-                  <span>{formatToken(totalInput)} {tokenSymbol}</span>
-                </div>
+              )}
+              <div className="review-total-row review-total-spend">
+                <span>You send</span>
+                <span>{formatTokenShort(totalInput)} {tokenSymbol}</span>
               </div>
-            );
-          })()}
-          {legs.some((l) => l.type === 'bridge') && (
-            <p className="confirm-note">Cross-chain legs deliver in seconds.</p>
-          )}
-          <div className="confirm-actions">
-            <button className="primary-button" onClick={handleConfirm}>Confirm &amp; Sign</button>
-            <button className="secondary-button" onClick={handleReset}>Cancel</button>
+            </div>
+
+            {legs.some((l) => l.type === 'bridge') && (
+              <p className="review-hint">Funds arrive in seconds.</p>
+            )}
+
+            <div className="confirm-actions">
+              <button className="primary-button" onClick={handleConfirm}>
+                Confirm with passkey
+              </button>
+              <button className="ghost-button" onClick={handleReset}>Cancel</button>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {step === 'resolving' && <p className="step-label">Quoting fees…</p>}
       {step === 'preparing' && <p className="step-label">Preparing transfer…</p>}
