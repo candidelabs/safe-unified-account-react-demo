@@ -275,13 +275,23 @@ function findSpillTarget(
   outputs: Map<number, { type: ChainContribution['type']; output: bigint }>,
   excludeIndex: number,
 ): number | null {
+  // Pick the chain with the MOST absolute headroom, not just the first with
+  // any. Spilling onto a chain that just shrunk to fit its own fees pushes
+  // it back over capacity and the algorithm ping-pongs between near-full
+  // chains while a chain with real slack sits idle.
+  let bestIndex: number | null = null;
+  let bestHeadroom = 0n;
   for (let i = 0; i < accountChains.length; i++) {
     if (i === excludeIndex) continue;
     const slot = outputs.get(i);
     const consumed = slot ? slot.output : 0n;
-    if (balances[i] > consumed) return i;
+    const headroom = balances[i] - consumed;
+    if (headroom > bestHeadroom) {
+      bestHeadroom = headroom;
+      bestIndex = i;
+    }
   }
-  return null;
+  return bestIndex;
 }
 
 // ── MetaTransaction building ───────────────────────────────────
