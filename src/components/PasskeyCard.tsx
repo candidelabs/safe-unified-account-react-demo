@@ -1,26 +1,38 @@
-import { accountChains } from '../logic/chains';
-
 interface PasskeyCardProps {
   handleCreatePasskeyClick: () => void;
 }
 
-function joinChainNames(names: string[]): string {
-  if (names.length === 0) return '';
-  if (names.length === 1) return names[0];
-  if (names.length === 2) return `${names[0]} and ${names[1]}`;
-  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
-}
-
 function PasskeyCard({ handleCreatePasskeyClick }: PasskeyCardProps) {
-  const chainList = joinChainNames(accountChains.map((c) => c.chainName));
-
   return (
     <div className="card create-account-card">
-      <h2 className="create-account-title">Create your account</h2>
+      <h2 className="create-account-title">Create your Safe Unified Account</h2>
       <p className="create-account-subtitle">
-        A multichain Safe account, secured by a passkey.
+        One smart account at the same address on every chain.
       </p>
       <ul className="create-account-features">
+        <li className="create-account-feature">
+          <span className="create-account-feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12h4l3 -8 4 16 3 -8h4" />
+            </svg>
+          </span>
+          <div className="create-account-feature-text">
+            <strong>Unified balance</strong>
+            <span>One number across every chain. Spend from any in a single signature.</span>
+          </div>
+        </li>
+        <li className="create-account-feature">
+          <span className="create-account-feature-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 12a9 9 0 1 1-3.51-7.13" />
+              <path d="M21 4v5h-5" />
+            </svg>
+          </span>
+          <div className="create-account-feature-text">
+            <strong>Account synced everywhere</strong>
+            <span>Update signers or rotate recovery methods once. The change applies on every chain.</span>
+          </div>
+        </li>
         <li className="create-account-feature">
           <span className="create-account-feature-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
@@ -38,30 +50,6 @@ function PasskeyCard({ handleCreatePasskeyClick }: PasskeyCardProps) {
           <div className="create-account-feature-text">
             <strong>No seed phrase</strong>
             <span>Just Face ID, Touch ID, or a security key.</span>
-          </div>
-        </li>
-        <li className="create-account-feature">
-          <span className="create-account-feature-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z" />
-            </svg>
-          </span>
-          <div className="create-account-feature-text">
-            <strong>Built on Safe Smart Accounts</strong>
-            <span>The most-audited smart-account standard.</span>
-          </div>
-        </li>
-        <li className="create-account-feature">
-          <span className="create-account-feature-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-              <path d="M2 12h20" />
-            </svg>
-          </span>
-          <div className="create-account-feature-text">
-            <strong>Works on every chain</strong>
-            <span>One address — {chainList}.</span>
           </div>
         </li>
       </ul>

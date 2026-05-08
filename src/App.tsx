@@ -66,9 +66,9 @@ function App() {
 				</a>
 			</header>
 			<div className="hero">
-				<h1>Send dollars across any chain.</h1>
+				<h1>Sign once. Execute on every chain.</h1>
 				<p className="subtitle">
-					One passkey. One signature. Settle to your recipient on whichever chain they prefer.
+					One passkey signature for any batch of operations, executed in parallel across every EVM chain.
 				</p>
 			</div>
 

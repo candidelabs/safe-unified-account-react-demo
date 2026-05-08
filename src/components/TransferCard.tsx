@@ -311,7 +311,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
 
       {((step === 'idle' && tab === 'send') || step === 'confirm') && (
         <div className="unified-balance">
-          <div className="balance-label">Unified balance</div>
+          <div className="balance-label">Unified balance across {accountChains.length} chains</div>
           <div className="balance-token-row">
             <TokenIcon symbol={tokenSymbol} size={28} />
             <span className="balance-token-symbol">{tokenSymbol}</span>
@@ -319,6 +319,7 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
           <div className="balance-amount">
             {loadingBalances ? '...' : formatToken(unifiedBalance)}
           </div>
+          <div className="balance-breakdown-label">Held on</div>
           <div className="balance-breakdown">
             {accountChains.map((chain, i) => (
               <span key={i} className="chain-balance">
