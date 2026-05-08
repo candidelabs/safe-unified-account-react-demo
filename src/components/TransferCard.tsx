@@ -10,6 +10,7 @@ import { ChainIcon } from './ChainIcon';
 import { TokenIcon } from './TokenIcon';
 import {
   readAllBalances,
+  readBalance,
   computeTransferSplit,
   buildTransferMetaTransactions,
   resolveLegs,
@@ -74,6 +75,8 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const [chainResults, setChainResults] = useState<ChainResult[]>([]);
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [manualTab, setManualTab] = useState<'send' | 'receive' | null>(null);
+  const [debugFetchError, setDebugFetchError] = useState<string | null>(null);
+  const [debugPerChain, setDebugPerChain] = useState<Array<{ chainId: string; name: string; token: string; rpc: string; balance?: string; error?: string }>>([]);
 
   // Derive directly from the passkey instead of reading the localStorage entry
   // IdentityStrip writes — that write happens in a useEffect, so on the first
@@ -93,14 +96,34 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
   const fetchBalances = useCallback(async () => {
     if (!accountAddress) return;
     setLoadingBalances(true);
+    setDebugFetchError(null);
     try {
       const result = await readAllBalances(accountChains, accountAddress);
       setBalances(result);
     } catch (err) {
       console.error('Failed to fetch balances:', err);
+      setDebugFetchError(err instanceof Error ? `${err.name}: ${err.message}` : String(err));
     } finally {
       setLoadingBalances(false);
     }
+
+    const perChain = await Promise.all(
+      accountChains.map(async (chain) => {
+        const base = {
+          chainId: chain.chainId.toString(),
+          name: chain.chainName,
+          token: chain.token,
+          rpc: chain.jsonRpcProvider,
+        };
+        try {
+          const b = await readBalance(chain, accountAddress);
+          return { ...base, balance: b.toString() };
+        } catch (err) {
+          return { ...base, error: err instanceof Error ? `${err.name}: ${err.message}` : String(err) };
+        }
+      }),
+    );
+    setDebugPerChain(perChain);
   }, [accountAddress]);
 
   useEffect(() => {
@@ -284,8 +307,47 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
     setManualTab(null);
   };
 
+  const debugEnabled = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('debug');
+
   return (
     <div className="card action-card">
+      {debugEnabled && (
+        <pre
+          style={{
+            background: '#111',
+            color: '#0f0',
+            padding: '8px',
+            fontSize: '10px',
+            lineHeight: 1.3,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all',
+            border: '1px solid #0f0',
+            borderRadius: '4px',
+            margin: '0 0 12px',
+            maxHeight: '50vh',
+            overflow: 'auto',
+          }}
+        >
+          {JSON.stringify(
+            {
+              accountAddress,
+              loadingBalances,
+              unifiedBalance: unifiedBalance.toString(),
+              balancesIndexed: balances.map((b, i) => ({
+                i,
+                chain: accountChains[i]?.chainName,
+                chainId: accountChains[i]?.chainId.toString(),
+                balance: b.toString(),
+              })),
+              debugFetchError,
+              debugPerChain,
+              accountChainsCount: accountChains.length,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      )}
       {step === 'idle' && (
         <div className="tab-bar">
           <button
