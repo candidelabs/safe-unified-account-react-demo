@@ -36,9 +36,11 @@
   --text-tertiary: rgba(255, 255, 255, 0.5);
 
   /* Typography */
-  --font-display: 'Mona Sans', system-ui, -apple-system, sans-serif;
-  --font-body: 'Mona Sans', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-display: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-body: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --font-serif: 'IBM Plex Serif', Georgia, serif;
+  --font-mono: 'DM Mono', ui-monospace, 'SF Mono', monospace;
+  --font-mono-tech: 'JetBrains Mono', ui-monospace, 'SF Mono', monospace;
 
   /* Radii */
   --radius-sm: 6px;
@@ -126,17 +128,21 @@ body {
 
 h1 {
   font-family: var(--font-display);
-  font-size: 3.6em;
-  font-weight: 600;
-  line-height: 1.05;
-  letter-spacing: -0.035em;
+  font-size: clamp(2.4rem, 6vw + 1rem, 4.75rem);
+  font-weight: 300;
+  line-height: 1.08;
+  letter-spacing: -0.025em;
   margin: 0;
+  color: #ffffff;
 }
 
-@media screen and (max-width: 768px) {
-  h1 {
-    font-size: 2.6em;
-  }
+.hero-highlight {
+  font-weight: 500;
+  background: linear-gradient(to right, #E71B3A, #E70B5A);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  white-space: nowrap;
 }
 
 h2 {

@@ -66,7 +66,7 @@ function App() {
 				</a>
 			</header>
 			<div className="hero">
-				<h1>Sign once. Execute on every chain.</h1>
+				<h1>Sign once. Execute on <span className="hero-highlight">every chain.</span></h1>
 				<p className="subtitle">
 					One passkey signature for any batch of operations, executed in parallel across every EVM chain.
 				</p>
