@@ -532,13 +532,18 @@ function TransferCard({ passkey }: { passkey: PasskeyLocalStorageFormat }) {
       })()}
 
       {(step === 'resolving' || step === 'preparing' || step === 'signing') && (
-        <div className="tx-status-inline">
-          <span className="tx-status-spinner" />
-          <span>
-            {step === 'resolving' && 'Quoting fees…'}
-            {step === 'preparing' && 'Preparing transfer…'}
+        <div className="tx-status-pending">
+          <div className="tx-status-pending-spinner" />
+          <div className="tx-status-pending-headline">
+            {step === 'resolving' && 'Quoting fees'}
+            {step === 'preparing' && 'Preparing transfer'}
             {step === 'signing' && 'Authenticate with your passkey'}
-          </span>
+          </div>
+          <div className="tx-status-pending-sub">
+            {step === 'signing'
+              ? 'Approve on your device when prompted.'
+              : 'This usually takes a second.'}
+          </div>
         </div>
       )}
 
